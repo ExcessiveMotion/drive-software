@@ -22,6 +22,13 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+//#include "stm32f4xx_ll_bus.h"
+//#include "stm32f4xx_ll_gpio.h"
+//#include "stm32f4xx_ll_tim.h"
+//#include "stm32f4xx_ll_rcc.h"
+//#include "stm32f4xx_ll_system.h"
+//#include "stm32f4xx_ll_utils.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,13 +57,14 @@ DFSDM_Channel_HandleTypeDef hdfsdm2_channel2;
 DFSDM_Channel_HandleTypeDef hdfsdm2_channel3;
 
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart4;
 
 /* USER CODE BEGIN PV */
-
+uint32_t dfsdmValue = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,8 +76,10 @@ static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_UART4_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-
+static void PWM_Init(void);
+static void PWM_Enable(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -111,14 +121,27 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   MX_UART4_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-
+  PWM_Init();
+  HAL_TIM_Base_Start_IT(&htim2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  PWM_Enable();
+
+  HAL_DFSDM_FilterRegularStart(&hdfsdm2_filter0);
+
+  TIM1->CCR1 = 256;
+
   while (1)
   {
+
+  	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+  	  HAL_Delay(100);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -236,10 +259,10 @@ static void MX_DFSDM2_Init(void)
   /* USER CODE END DFSDM2_Init 1 */
   hdfsdm2_filter0.Instance = DFSDM2_Filter0;
   hdfsdm2_filter0.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
-  hdfsdm2_filter0.Init.RegularParam.FastMode = DISABLE;
+  hdfsdm2_filter0.Init.RegularParam.FastMode = ENABLE;
   hdfsdm2_filter0.Init.RegularParam.DmaMode = DISABLE;
-  hdfsdm2_filter0.Init.FilterParam.SincOrder = DFSDM_FILTER_FASTSINC_ORDER;
-  hdfsdm2_filter0.Init.FilterParam.Oversampling = 1;
+  hdfsdm2_filter0.Init.FilterParam.SincOrder = DFSDM_FILTER_SINC3_ORDER;
+  hdfsdm2_filter0.Init.FilterParam.Oversampling = 256;
   hdfsdm2_filter0.Init.FilterParam.IntOversampling = 1;
   if (HAL_DFSDM_FilterInit(&hdfsdm2_filter0) != HAL_OK)
   {
@@ -249,8 +272,8 @@ static void MX_DFSDM2_Init(void)
   hdfsdm2_filter1.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
   hdfsdm2_filter1.Init.RegularParam.FastMode = DISABLE;
   hdfsdm2_filter1.Init.RegularParam.DmaMode = DISABLE;
-  hdfsdm2_filter1.Init.FilterParam.SincOrder = DFSDM_FILTER_FASTSINC_ORDER;
-  hdfsdm2_filter1.Init.FilterParam.Oversampling = 1;
+  hdfsdm2_filter1.Init.FilterParam.SincOrder = DFSDM_FILTER_SINC3_ORDER;
+  hdfsdm2_filter1.Init.FilterParam.Oversampling = 256;
   hdfsdm2_filter1.Init.FilterParam.IntOversampling = 1;
   if (HAL_DFSDM_FilterInit(&hdfsdm2_filter1) != HAL_OK)
   {
@@ -260,8 +283,8 @@ static void MX_DFSDM2_Init(void)
   hdfsdm2_filter2.Init.RegularParam.Trigger = DFSDM_FILTER_SW_TRIGGER;
   hdfsdm2_filter2.Init.RegularParam.FastMode = DISABLE;
   hdfsdm2_filter2.Init.RegularParam.DmaMode = DISABLE;
-  hdfsdm2_filter2.Init.FilterParam.SincOrder = DFSDM_FILTER_FASTSINC_ORDER;
-  hdfsdm2_filter2.Init.FilterParam.Oversampling = 1;
+  hdfsdm2_filter2.Init.FilterParam.SincOrder = DFSDM_FILTER_SINC3_ORDER;
+  hdfsdm2_filter2.Init.FilterParam.Oversampling = 256;
   hdfsdm2_filter2.Init.FilterParam.IntOversampling = 1;
   if (HAL_DFSDM_FilterInit(&hdfsdm2_filter2) != HAL_OK)
   {
@@ -277,7 +300,7 @@ static void MX_DFSDM2_Init(void)
   hdfsdm2_channel1.Init.SerialInterface.Type = DFSDM_CHANNEL_SPI_RISING;
   hdfsdm2_channel1.Init.SerialInterface.SpiClock = DFSDM_CHANNEL_SPI_CLOCK_INTERNAL;
   hdfsdm2_channel1.Init.Awd.FilterOrder = DFSDM_CHANNEL_FASTSINC_ORDER;
-  hdfsdm2_channel1.Init.Awd.Oversampling = 1;
+  hdfsdm2_channel1.Init.Awd.Oversampling = 32;
   hdfsdm2_channel1.Init.Offset = 0;
   hdfsdm2_channel1.Init.RightBitShift = 0x00;
   if (HAL_DFSDM_ChannelInit(&hdfsdm2_channel1) != HAL_OK)
@@ -359,7 +382,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 0;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 65535;
+  htim1.Init.Period = 1023;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -387,7 +410,7 @@ static void MX_TIM1_Init(void)
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_SET;
   sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
   if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
@@ -416,6 +439,51 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 2 */
   HAL_TIM_MspPostInit(&htim1);
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 65536-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 244;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -617,6 +685,78 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+static void PWM_Init(void){
+
+	RCC->AHB1ENR 	|= RCC_AHB1ENR_GPIOAEN;	// Enable GPIOA Clock
+	RCC->AHB1ENR 	|= RCC_AHB1ENR_GPIOBEN;	// Enable GPIOB Clock
+	RCC->APB2ENR 	|= RCC_APB2ENR_TIM1EN;	// Enable TIM1 Clock
+
+	GPIOA->MODER	|= (0x2 << (2*8));		// Set PA8 to alternate function mode
+	GPIOA->AFR[1]	|= (0x1 << (4*(8-8)));	// Set PA8's alternate function
+
+	GPIOB->MODER	|= (0x2 << (2*13));		// Set PB13 to alternate function mode
+	GPIOB->AFR[1]	|= (0x1 << (4*(13-8)));	// Set PB13's alternate function
+
+//	TIM1->CR1	= 0x0000;
+//	TIM1->CR2	= 0x0000;
+//	TIM1->DIER	= 0x0000;
+//	TIM1->SR	= 0x0000;
+//	TIM1->EGR	= 0x0000;
+	TIM1->CCMR1	= 0x6868;
+	TIM1->CCMR2	= 0x0068;
+	TIM1->CCER	= 0x0555;
+//	TIM1->CNT	= 0x0000;
+	TIM1->PSC	= 0x0000;	// Prescaler
+	TIM1->ARR	= 0x03ff;	// Period
+//	TIM1->RCR	= 0x0000;
+//	TIM1->CCR1	= 0x0000;
+//	TIM1->CCR2	= 0x0000;
+//	TIM1->CCR2	= 0x0000;
+//	TIM1->CCR3	= 0x0000;
+//	TIM1->CCR4	= 0x0000;
+	TIM1->BDTR	= 0xa001;
+//	TIM1->DCR	= 0x0000;
+//	TIM1->DMAR	= 0x0000;
+
+
+
+}
+
+static void PWM_Enable(void){
+
+	TIM1->CR1	|= 0x0001;
+
+}
+
+
+void TransmitDFSDMValue() {
+    uint8_t dataToSend[4];
+    // Assuming dfsdmValue is int32_t, you should send the bytes of this integer
+    dataToSend[0] = (uint8_t)(dfsdmValue >> 24);
+    dataToSend[1] = (uint8_t)(dfsdmValue >> 16);
+    dataToSend[2] = (uint8_t)(dfsdmValue >> 8);
+    dataToSend[3] = (uint8_t)dfsdmValue;
+//    dataToSend[0] = 't';
+//    dataToSend[1] = 'e';
+//    dataToSend[2] = 's';
+//    dataToSend[3] = 't';
+
+    // Transmit the data over UART4
+//    HAL_UART_Transmit(&huart4, dataToSend, sizeof(dataToSend), HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart4, dataToSend, 4, HAL_MAX_DELAY);
+}
+
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM2) { // Check if the interrupt came from TIM2
+        // Get the regular value of DFSDM filter
+        HAL_DFSDM_FilterGetRegularValue(&hdfsdm2_filter0, &dfsdmValue);
+        // Transmit the value over UART
+        TransmitDFSDMValue();
+    }
+}
+
 
 /* USER CODE END 4 */
 
