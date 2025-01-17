@@ -1,0 +1,483 @@
+
+hardware:
+  type: 0 #32 bit
+  version: 0  #32 bit
+  readable_name: "Servo drive (model number goes here)"
+  description: "Servo drive designed for industrial high voltage motors"
+
+firmware:
+  version: 0
+  release_date: "7/18/2024"
+  description: "Firmware for (model number goes here) rev (hardware rev number goes here) servo drive"
+
+
+message_severities:
+  none: 0
+  info: 1
+  warning: 2
+  error: 3
+  critical: 4
+
+messages:
+
+  fans:
+    speed_high:
+      readable_name: "Fan speed high"
+      description: "Measured fan speed was too high"
+      severity: "warning"
+
+    speed_low:
+      readable_name: "Fan speed low"
+      description: "Measured fan speed was too low"
+      severity: "warning"
+
+    speed_zero:
+      readable_name: "Fan speed zero"
+      description: "Fan speed was zero"
+      severity: "warning"
+
+  current_sense:
+    overcurrent:
+      readable_name: "Overcurrent"
+      description: "Measured phase current was too high for the drivers"
+      severity: "error"
+
+    imbalance:
+      readable_name: "Current imbalance"
+      description: "Detected leakage current was too high"
+      severity: "error"
+
+  communication:
+    timeout:
+      readable_name: "Timeout"
+      description: "No valid packets received within the timeout period"
+      severity: "error"
+
+    invalid_address:
+      readable_name: "Invalid address"
+      description: "read/write attempted on an address that either doesn't exist, or has incompatible permissions"
+      severity: "warning"
+
+    invalid_cyclic_config:
+      readable_name: "Invalic cyclic config"
+      description: "Attempted to configure a cyclic value that either doesn't exist, or has incompatible permissions"
+      severity: "warning"
+
+  system:
+    overtemp:
+      readable_name: "Overtemp"
+      description: "Measured temperature was too high"
+      severity: "error"
+
+    overvoltage:
+      readable_name: "Overvoltage"
+      description: "Measured DC bus voltage was too high"
+      severity: "critical"
+
+    floating_voltage_too_high:
+      readable_name: "Floating voltage too high"
+      description: "Measured voltage on the output phases while off was too high"
+      severity: "critical"
+
+  phase_pwm:
+    voltage_saturation:
+      readable_name: "Voltage saturation"
+      description: "PWM output voltage was saturated, unable to reach commanded voltage"
+      severity: "warning"
+
+
+  sto:
+    sto_active:
+      readable_name: "STO active"
+      description: "Safe torque off is active"
+      severity: "critical"
+
+    sto_fault_matching_channels:
+      readable_name: "Channels do not match"
+      description: "STO channel feedback shows channels do not match, this usually indicates a wiring or hardware fault"
+      severity: "critical"
+
+    sto_hardware_fault:
+      readable_name: "Hardware fault"
+      description: "STO internal hardware fault detected, feedback channels active when disabled"
+      severity: "critical"
+
+  RL_calib_mode:
+    inductance_calib_fail:
+      readable_name: "Inductance calibration failed"
+      description: "Inductance calibration failed, current did not fall within expected range"
+      severity: "error"
+
+    resistance_calib_fail:
+      readable_name: "Resistance calibration failed"
+      description: "Resistance calibration failed, unable to reach calibration current"
+      severity: "error"
+
+
+
+hard_parameters: 
+  
+  # TODO reword
+  # DO NOT MODIFY THESE VALUES UNLESS YOU KNOW WHAT YOU ARE DOING
+  # incorrect values may result in catastrophic hardware failure
+  # these are set at build time and cannot be modified by the controller
+
+
+  MESSAGE:
+    value: 0b0001 << 28
+    var_type: "uint32_t"
+    unit: ""
+    readable_name: ""
+    description: "Normal message"
+
+  WARNING:
+    value: 0b0010 << 28
+    var_type: "uint32_t"
+    unit: ""
+    readable_name: ""
+    description: "Warning message"
+
+  ERROR:
+    value: 0b0100 << 28
+    var_type: "uint32_t"
+    unit: ""
+    readable_name: ""
+    description: "Error message"
+
+  CRITICAL:
+    value: 0b1000 << 28
+    var_type: "uint32_t"
+    unit: ""
+    readable_name: ""
+    description: "Critical error message"
+
+  max_fan_speed_rpm:
+    value: 12400
+    var_type: "uint32_t"
+    unit: "rpm"
+    readable_name: "Max fan speed"
+    description: "Maximum fan speed in RPM"
+
+
+  shunt_resistance:
+    value: 0.005
+    var_type: "float"
+    unit: "ohms"
+    readable_name: "Current sense resistance"
+    description: "Value of the resistors used to measure phase current.\nThese may be changed to better support lower current motors but it is not recomended."
+  
+  min_dc_bus_voltage:
+    value: 24
+    var_type: "uint16_t"
+    unit: "volts"
+    readable_name: "Minimum DC bus voltage"
+    description: "Undervoltage protection will trip if the bus drops below this value."
+
+  max_dc_bus_voltage:
+    value: 400
+    var_type: "uint16_t"
+    unit: "volts"
+    readable_name: "Maximum DC bus voltage"
+    description: "Overvoltage protection will trip if the bus rises above this value."
+
+  max_phase_current:
+    value: 10000
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "Max allowed phase current"
+    description: "Maximum current allowed through an output phase before overcurrent protection is tripped."
+
+  max_imbalance_current:
+    value: 500
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "Max allowed phase current imbalance"
+    description: "Maximum difference allowed between phase currents before overcurrent protection is tripped."
+
+
+  heatsink_over_temp_limit:
+    value: 50
+    var_type: "uint8_t"
+    unit: "celsius"
+    readable_name: "Heatsink overtemp limit"
+    description: "Heatsink temperature at which overheat protection will trip"
+
+  board_over_temp_limit:
+    value: 50
+    var_type: "uint8_t"
+    unit: "celsius"
+    readable_name: "PCB overtemp limit"
+    description: "PCB temperature at which overheat protection will trip"
+
+  sysclk:
+    value: 100
+    var_type: "uint32_t"
+    unit: "Mhz"
+    readable_name: "System clock frequency"
+    description: "System clock frequency"
+
+  systick_frequency:
+    value: 100
+    var_type: "uint32_t"
+    unit: "Hz"
+    readable_name: "System tick frequency"
+    description: "System tick frequency, do not set above 1khz"
+
+  deadtime:
+    value: 80
+    var_type: "uint32_t"
+    unit: "ns"
+    readable_name: "Phase PWM deadtime"
+    description: "Phase PWM deadtime to prevent high and low side fets being on at the same time"
+
+  pwmclk:
+    value: 25
+    var_type: "uint32_t"
+    unit: "khz"
+    readable_name: "Phase PWM output frequency"
+    description: "Phase PWM output frequency"
+
+  adc_enable_delay_cycles:
+    value: 30
+    var_type: "uint32_t"
+    unit: "count"
+    readable_name: "ADC enable delay cycles"
+    description: "How many cycles it takes for the ADCs to power on after phase PWM is enabled"
+
+  adcclk:
+    value: 20
+    var_type: "uint32_t"
+    unit: "MHz"
+    readable_name: "Phase ADC clock frequency"
+    description: "Phase ADC clock frequency"
+
+  adc_voltage:
+    value: 0.250
+    var_type: "float"
+    unit: "volts"
+    readable_name: "ADC optimal shunt input voltage range"
+    description: "ADC optimal shunt input voltage range"
+
+  adc_min_value_percent:
+    value: 0.1094
+    var_type: "float"
+    unit: ""
+    readable_name: "" #TODO: figure out what this does
+    description: ""
+  
+  dfsdm_divisions:
+    value: 8388608
+    var_type: "uint32_t"
+    unit: "count"
+    readable_name: "" #TODO: figure out what this does
+    description: ""
+
+  dfsdm_short_circuit_bit_count:
+    value: 127
+    var_type: "uint8_t"
+    unit: "count"
+    readable_name: "Phase ADC short circuit detector consecutive bit count"
+    description: "Number of consecutive same bits to receive from the ADC before triggering short circuit detection.\nMax is 127 (ADCs send a different bit every 128 cycles even at full scale)"
+
+  device_starting_address:
+    value: 0
+    var_type: "uint8_t"
+    unit: "address"
+    readable_name: "Device starting address"
+    description: "rs422 address to start at, DIP switches may be used to increment it, read at power on"
+
+  cyclic_address_count:
+    value: 32
+    var_type: "uint8_t"
+    unit: "count"
+    readable_name: "Cyclic address count"
+    description: "Maximum number of cyclic addresses that can be configured"
+  
+
+
+registers:
+# values meant to be read/written by the controller to configure and use the device
+
+  fan_speed_cmd:
+    value: 0
+    var_type: "uint16_t"
+    unit: ""
+    readable_name: "Fan speed"
+    description: "Fan speed in max rpm/0xffff"
+    permissions: "read/write"
+
+  fan_speed_measured:
+    value: 0
+    var_type: "uint16_t"
+    unit: ""
+    readable_name: "Measured fan speed"
+    description: "Measured fan speed in max rpm/0xffff"
+    permissions: "read"
+
+  current_command_q:
+    value: 0
+    var_type: "int32_t"
+    unit: "milliamps"
+    readable_name: "q axis current command"
+    description: "q setpoint for the internal current control"
+    permissions: "read/write"
+
+  current_command_d:
+    value: 0
+    var_type: "int32_t"
+    unit: "milliamps"
+    readable_name: "d axis current command"
+    description: "d setpoint for the internal current control"
+    permissions: "read/write"
+
+  current_measured_q:
+    value: 0
+    var_type: "int32_t"
+    unit: "milliamps"
+    readable_name: "q axis current feedback"
+    description: "Actual measured q current through motor"
+    permissions: "read"
+
+  current_measured_d:
+    value: 0
+    var_type: "int32_t"
+    unit: "milliamps"
+    readable_name: "d axis current feedback"
+    description: "Actual measured d current through motor"
+    permissions: "read"
+
+  commutation_command:
+    value: 0
+    var_type: "uint16_t"
+    unit: "counts"
+    readable_name: "Electrical commutation command"
+    description: "Value 0-65525 representing the current electrical angle of the motor"
+    permissions: "read/write"
+  
+  dc_bus_voltage:
+    value: 0
+    var_type: "uint16_t"
+    unit: "volts"
+    readable_name: "DC bus voltage"
+    description: "Measured DC bus voltage"
+    permissions: "read"
+  
+  current_loop_p_gain:
+    value: 0.0
+    var_type: "float"
+    unit: ""
+    readable_name: "Proportional gain for current loop"
+    description: "Proportional gain for current loop"
+    permissions: "read/write"
+
+  current_loop_i_gain:
+    value: 0.0
+    var_type: "float"
+    unit: ""
+    readable_name: "Integral gain for current loop"
+    description: "Integral gain for current loop"
+    permissions: "read/write"
+
+  current_loop_i_limit:
+    value: 0.0
+    var_type: "float"
+    unit: ""
+    readable_name: "Integral limit for current loop"
+    description: "Integral limit for current loop"
+    permissions: "read/write"
+  
+  max_ouput_voltage:
+    value: 50
+    var_type: "uint16_t"
+    unit: "volts"
+    readable_name: "Maximum output voltage"
+    description: "Maximum output voltage (PWM dutycycle)"
+    permissions: "read/write"
+  
+  requested_state:
+    value: 0
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Requested drive state"
+    description: "FAULT: 1, IDLE: 2, RUN: 3"
+    permissions: "read/write"
+
+
+  ####################### COMMUNICATION REGISTERS #######################
+
+  device_communication_watchdog_timeout:
+    value: 1
+    var_type: "uint16_t"
+    unit: "milliseconds"
+    readable_name: "Device communication watchdog timeout"
+    description: "How long before a timeout occurs due to no valid packet transfers"
+    permissions: "read/write"
+
+  enable_cyclic_data:
+    value: 0
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Enable cyclic data"
+    description: "Enable sending/receiving configured cyclic data"
+    permissions: "read/write"
+
+  cyclic_read_address_n:
+    value: 0xFFFF
+    var_type: "uint16_t"
+    unit: "address"
+    readable_name: "Cyclic read address"
+    description: "Set to a register address to enable continuous cyclic reading"
+    permissions: "read/write"
+
+  cyclic_write_address_n:
+    value: 0xFFFF
+    var_type: "uint16_t"
+    unit: "address"
+    readable_name: "Cyclic write address"
+    description: "Set to a register address to enable continuous cyclic writing"
+    permissions: "read/write"
+
+  firmware_update_data_0:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
+
+  firmware_update_data_1:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
+
+  firmware_update_data_2:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
+
+  firmware_update_data_3:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
+
+
+
+
+
+  # :
+  #   value:
+  #   var_type: ""
+  #   unit: ""
+  #   readable_name: ""
+  #   description: ""
+  #   permissions: "read/write"
+  
