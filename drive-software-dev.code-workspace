@@ -1,0 +1,162 @@
+{
+	"extensions": {
+		"recommendations": [
+		  "ms-vscode.cpptools",
+		  "ms-vscode.cmake-tools",
+		  "twxs.cmake",
+		  "marus25.cortex-debug",
+		  "dan-c-underwood.arm",
+		  "zixuanwang.linkerscript",
+		  "ms-python.python",
+		  "ms-python.vscode-pylance",
+		  "ms-python.vscode-python-debugger",
+		]
+	},
+
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"type": "cppbuild",
+				"label": "Build project",
+				"command": "cmake",
+				"args": ["--build", "${command:cmake.buildDirectory}", "-j", "8"],
+				"options": {
+					"cwd": "${workspaceFolder}/firmware"
+				},
+				"problemMatcher": ["$gcc"],
+				"group": {
+					"kind": "build",
+					"isDefault": true
+				}
+			},
+			{
+				"type": "shell",
+				"label": "Re-build project",
+				"command": "cmake",
+				"args": ["--build", "${command:cmake.buildDirectory}", "--clean-first", "-v", "-j", "8"],
+				"options": {
+					"cwd": "${workspaceFolder}/firmware"
+				},
+				"problemMatcher": ["$gcc"],
+			},
+			{
+				"type": "shell",
+				"label": "Clean project",
+				"command": "cmake",
+				"args": ["--build", "${command:cmake.buildDirectory}", "--target", "clean"],
+				"options": {
+					"cwd": "${workspaceFolder}/firmware"
+				},
+				"problemMatcher": []
+			},
+			{
+				"type": "shell",
+				"label": "CubeProg: Flash project (SWD)",
+				"command": "STM32_Programmer_CLI",
+				"args": [
+					"--connect",
+					"port=swd",
+					"--download", "${command:cmake.launchTargetPath}",
+					"-hardRst"
+				],
+				"options": {
+					"cwd": "${workspaceFolder}/firmware"
+				},
+				"problemMatcher": []
+			},
+			{
+				"type": "shell",
+				"label": "CubeProg: Flash project with defined serial number (SWD) - you must set serial number first",
+				"command": "STM32_Programmer_CLI",
+				"args": [
+					"--connect",
+					"port=swd",
+					"sn=<yourserialnumber>",
+					"--download", "${command:cmake.launchTargetPath}",
+					"-hardRst"
+				],
+				"options": {
+					"cwd": "${workspaceFolder}/firmware"
+				},
+				"problemMatcher": []
+			},
+			{
+				"type": "shell",
+				"label": "CubeProg: List all available communication interfaces",
+				"command": "STM32_Programmer_CLI",
+				"args": [
+					"--list",
+				],
+				"options": {
+					"cwd": "${workspaceFolder}/firmware"
+				},
+				"problemMatcher": []
+			},
+			{
+				"type": "shell",
+				"label": "Create Python venv and install dependencies",
+				"command": "cmd",
+				"args": [
+					"/c",
+					"if not exist ${workspaceFolder}\\python\\.venv ( python -m venv ${workspaceFolder}\\python\\.venv && ${workspaceFolder}\\python\\.venv\\Scripts\\activate && pip install -r requirements.txt ) else ( echo Virtual environment already exists )"
+				],
+				"options": {
+					"cwd": "${workspaceFolder}\\python"
+				},
+				"problemMatcher": []
+			}
+		]
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "Debug",
+				"cwd": "${workspaceFolder}/firmware",        //Path from where commands are executed
+				"type": "cortex-debug",             //Debug 
+				"executable": "${command:cmake.launchTargetPath}", //or fixed file path: build/project-name.elf
+				"request": "launch",                //Use "attach" to connect to target w/o elf download
+				"servertype": "stlink",             //Use stlink setup of cortex-M debug
+				"device": "STM32F413RG",            //MCU used
+				"interface": "swd",                 //Interface setup
+				"serialNumber": "",                 //Set ST-Link ID if you use multiple at the same time
+				"runToEntryPoint": "main",          //Run to main and stop there
+				"svdFile": "firmware/stm32f413.svd",         //SVD file to see registers
+				"v1": false,
+				"showDevDebugOutput": "both",
+			},
+			// {
+			//     "name": "Run without Debug",
+			//     "cwd": "${workspaceFolder}/firmware",        //Path from where commands are executed
+			//     "type": "cortex-debug",             //Debug 
+			//     "executable": "${command:cmake.launchTargetPath}", //or fixed file path: build/project-name.elf
+			//     "request": "launch",                //Use "attach" to connect to target w/o elf download
+			//     "servertype": "stlink",             //Use stlink setup of cortex-M debug
+			//     "device": "STM32F413RG",            //MCU used
+			//     "interface": "swd",                 //Interface setup
+			//     "serialNumber": "",                 //Set ST-Link ID if you use multiple at the same time
+			//     "runToEntryPoint": "main",          //Run to main and stop there
+			//     "svdFile": "firmware/stm32f413.svd",         //SVD file to see registers
+			//     "v1": false,
+			//     "showDevDebugOutput": "both",
+			//     "postLaunchCommands": [
+			//             "monitor reset run",
+			//             "detach"
+			//         ]
+			// }
+		]
+	},
+	"settings": {
+		"cortex-debug.variableUseNaturalFormat": true,
+		"files.associations": {
+			"cmath": "cpp"
+		}
+	}
+}
