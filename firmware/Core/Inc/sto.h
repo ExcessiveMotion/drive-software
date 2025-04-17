@@ -27,6 +27,6 @@ class sto{
         message_severities enable(void);
         void disable(void);
 
-        message_severities check_fault(void);
+        bool check_fault(void);
 
 };

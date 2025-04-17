@@ -1,4 +1,4 @@
-import yaml, datetime, os
+import yaml, datetime, os, json
 
 class cFileGenerator:
 
@@ -101,7 +101,7 @@ class cFileGenerator:
             self.file += f"\t\t// {comment}"
         
         for var_name, var_info in struct.items():
-            self.file += f"\n\t{var_info["type"]} {var_name} = {var_info['value']};"
+            self.file += f"\n\t{var_info['type']} {var_name} = {var_info['value']};"
             self.file += f"\t\t// ({var_info['unit']}) {var_info['description']}"
         
         self.file += "\n};"
@@ -115,6 +115,25 @@ class cFileGenerator:
     def saveFile(self) -> None:
         f = open(self.fullFilePath, "w")
         f.write(self.file)
+        f.close()
+
+
+class jsonFileGenerator:
+    def __init__(self, filePath: str) -> None:
+        """
+        fileName: Directory and name with extension of the file to generate, no spaces allowed
+        """
+        self.fullFilePath = filePath
+        self.fileName = filePath.split("/")[-1]
+
+        self.file = {}
+
+    def append(self, key: str, value: str) -> None:
+        self.file[key] = value
+
+    def saveFile(self) -> None:
+        f = open(self.fullFilePath, "w")
+        f.write(json.dumps(self.file, indent=4))
         f.close()
 
 
@@ -134,33 +153,34 @@ except FileNotFoundError:
 # generate header file for device firmware
 deviceFileGen = cFileGenerator(currentDir + "/../firmware/Core/Inc/device_descriptor.h")
 deviceFileGen.file = f"""
-    //////////////////// AUTO GENERATED FILE ////////////////////
+//////////////////// AUTO GENERATED FILE ////////////////////
 
-    // do not manually modify this file, modify "device_descriptor.yaml" instead
-    // run autogen.py to update (called at each build by default)
+// do not manually modify this file, modify "device_descriptor.yaml" instead
+// run autogen.py to update (called at each build by default)
 
-    // last updated at {datetime.datetime.now()}
+// last updated at {datetime.datetime.now()}
 
-    #pragma once
-    #include <stdint.h>
+#pragma once
+#include <stdint.h>
 
-    """
+"""
 
-controllerFileGen = cFileGenerator(currentDir + f"/device_{deviceDescriptor['hardware']['type']}_descriptor.h")
-controllerFileGen.file = f"""
-    //////////////////// AUTO GENERATED FILE ////////////////////
+controllerFileGen = jsonFileGenerator(currentDir + f"/../firmware/device_{deviceDescriptor['hardware']['type']}_{deviceDescriptor['hardware']['version']}.json")
+controllerFileGen.append("generated_date", str(datetime.datetime.now()))
+controllerFileGen.append("hw_info", {
+    "type":deviceDescriptor["hardware"]["type"],
+    "version":deviceDescriptor["hardware"]["version"],
+    "readable_name":deviceDescriptor["hardware"]["readable_name"],
+    "description":deviceDescriptor["hardware"]["description"]
+    })
+controllerFileGen.append("fw_info", {
+    "version":deviceDescriptor["firmware"]["version"],
+    "release_date":deviceDescriptor["firmware"]["release_date"],
+    "description":deviceDescriptor["firmware"]["description"]
+})
 
-    // this file specifies how the controller should interact with the device
+controllerFileGen.append("message_severities", deviceDescriptor["message_severities"])
 
-    // do not manually modify this file, modify the "device_descriptor.yaml" associated with the device firmware instead
-
-    // last updated at {datetime.datetime.now()}
-
-    #pragma once
-    #include <stdint.h>
-
-    """
-controllerFileGen.file += f"namespace em_serial_device_{deviceDescriptor['hardware']['type']} {{\n\n"
 
 deviceFileGen.define("HARDWARE_TYPE", deviceDescriptor["hardware"]["type"])
 deviceFileGen.define("HARDWARE_VERSION", deviceDescriptor["hardware"]["version"])
@@ -203,26 +223,27 @@ struct_vars["hardware_type"] = {
     "unit":"",
     "value":deviceDescriptor["hardware"]["type"],
     "description":"hardware type",
-    "permissions":["read"]
+    "permissions":"read"
 }
 struct_vars["hardware_version"] = {
     "type":"uint32_t",
     "unit":"",
     "value":deviceDescriptor["hardware"]["version"],
     "description":"hardware version",
-    "permissions":["read"]
+    "permissions":"read"
 }
 struct_vars["firmware_version"] = {
     "type":"uint32_t",
     "unit":"",
     "value":deviceDescriptor["firmware"]["version"],
     "description":"firmware version",
-    "permissions":["read"]
+    "permissions":"read"
 }
 cyclic_read_address_start = None
 cyclic_write_address_start = None
 cyclic_enable_address = None
 i = 3
+
 for register_name, register_info in deviceDescriptor["registers"].items():
 
     if(register_info["var_type"] not in vars.keys()):      # catch bad variable types
@@ -247,10 +268,15 @@ for register_name, register_info in deviceDescriptor["registers"].items():
     struct_vars[register_name] = t
     i += 1
 
+for i, v in enumerate(struct_vars.values()):
+    v["index"] = i
+
 deviceFileGen.struct("device_struct", struct_vars, "device variables")
 deviceFileGen.blankLine(1)
 deviceFileGen.file += "\nstatic device_struct vars;"
 deviceFileGen.blankLine(1)
+
+controllerFileGen.append("registers", struct_vars)
 
 
 pointers = []
@@ -279,7 +305,7 @@ deviceFileGen.define("CYCLIC_READ_ADDRESS_POINTER_START", cyclic_read_address_st
 deviceFileGen.define("CYCLIC_WRITE_ADDRESS_POINTER_START", cyclic_write_address_start)
 deviceFileGen.define("CYCLIC_ENABLE_ADDRESS_POINTER", cyclic_enable_address)
 deviceFileGen.define("VAR_COUNT", len(pointers), "number of variables")
-deviceFileGen.array("static void*", "var_pointers", len(pointers), initValue=pointers, comment="pointers to all variables", newline=True)
+deviceFileGen.array("__attribute__((unused)) static void*", "var_pointers", len(pointers), initValue=pointers, comment="pointers to all variables", newline=True)
 #fileGen.array("static const bool", "read_permissions", len(read_permissions), initValue=read_permissions, comment="read permissions for all variables")
 #fileGen.array("static const bool", "write_permissions", len(write_permissions), initValue=write_permissions, comment="write permissions for all variables")
 deviceFileGen.array("static const uint8_t", "data_info", len(data_info), initValue=data_info, comment="data info for all variables")
@@ -297,6 +323,8 @@ deviceFileGen.enum("message_severities", t, "uint8_t", "message severities")
 object_id = 0
 total_messages = 0
 message_values = []
+all_messages = {}
+message_delays = []
 for object_name, object_messages in deviceDescriptor["messages"].items():
 
     messages_enum = {}
@@ -306,6 +334,17 @@ for object_name, object_messages in deviceDescriptor["messages"].items():
         message_values.append(value)
 
         messages_enum[message_id+total_messages] = {"name":message_name, "comment":message_info["description"]}
+
+        if object_name not in all_messages:
+            all_messages[object_name] = {}
+        all_messages[object_name][message_name] = message_info
+        all_messages[object_name][message_name]["id"] = message_id+total_messages
+
+        if "time_delay_us" in message_info:
+            message_delays.append(int(float(message_info["time_delay_us"])))
+        else:
+            message_delays.append(0)
+
         message_id += 1
 
     total_messages += message_id
@@ -314,7 +353,12 @@ for object_name, object_messages in deviceDescriptor["messages"].items():
 
     object_id += 1
 
+controllerFileGen.append("messages", all_messages)
+
 deviceFileGen.array("inline uint32_t", "message_values", total_messages, initValue=message_values, comment="message values")
+
+deviceFileGen.array("static const uint32_t", "message_delays", total_messages, initValue=message_delays, comment="message delays")
+
 
 deviceFileGen.define("MESSAGE_COUNT", total_messages, "total number of messages")
 

@@ -35,10 +35,6 @@ void current_sense_interface::init(){
 	DFSDM2_Channel2->CHCFGR1 |= (1 << DFSDM_CHCFGR1_SPICKSEL_Pos);	// Set channel 2 clock source CKOUT
 	DFSDM2_Channel3->CHCFGR1 |= (1 << DFSDM_CHCFGR1_SPICKSEL_Pos);	// Set channel 3 clock source CKOUT
 
-	// DFSDM2_Filter1->FLTCR1 |= (1 << DFSDM_FLTCR1_RCH_Pos);	// Set filter 1 to channel 1
-	// DFSDM2_Filter2->FLTCR1 |= (2 << DFSDM_FLTCR1_RCH_Pos);	// Set filter 2 to channel 2
-	// DFSDM2_Filter3->FLTCR1 |= (3 << DFSDM_FLTCR1_RCH_Pos);	// Set filter 3 to channel 3
-
     DFSDM2_Filter1->FLTJCHGR = 0b1 << 1;	// Set filter 1 to channel 1
     DFSDM2_Filter2->FLTJCHGR = 0b1 << 2;	// Set filter 2 to channel 2
     DFSDM2_Filter3->FLTJCHGR = 0b1 << 3;	// Set filter 3 to channel 3

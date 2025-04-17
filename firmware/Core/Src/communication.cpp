@@ -12,6 +12,8 @@ communication::communication(logging* logs){
     \note Run this after clocks are configured but before the main loop is started
 */
 void communication::init(){
+
+	firm_update.init();
     
 	RCC->APB2ENR |= RCC_APB2ENR_USART6EN;     // enable clock (100 MHz)
 	RCC->AHB1ENR |= RCC_AHB1ENR_CRCEN;	// enable CRC clock
@@ -92,20 +94,19 @@ void communication::init(){
 
 	USART6->CR3 |= USART_CR3_DMAT;	// Enable DMA for tx
 
-    NVIC_EnableIRQ(DMA2_Stream1_IRQn);  // Configure NVIC for DMA RX Interrupt	TODO: make sure this priority is lower than the PWM update IRQ
-	//NVIC_EnableIRQ(DMA2_Stream6_IRQn);  // Configure NVIC for DMA TX Interrupt
-	NVIC_SetPriority(DMA2_Stream1_IRQn, 5);
+    NVIC_EnableIRQ(DMA2_Stream1_IRQn);  // Configure NVIC for DMA RX Interrupt
+	NVIC_SetPriority(DMA2_Stream1_IRQn, 2);
 	NVIC_SetPriority(USART6_IRQn, 2);
 	NVIC_EnableIRQ(USART6_IRQn);	// Enable USART6 interrupts
-	
 
     DMA2_Stream1->CR |= DMA_SxCR_EN; // Enable DMA RX stream
-	//DMA2_Stream6->CR |= DMA_SxCR_EN; // Enable DMA TX stream
 
 	//TODO: verify no AHB error will be generated due to crossing a 1Kbyte boundary
 
-	// setup us timer for synchronization
-	timer_us_init();
+	// setup timer for synchronization and system timing
+	timer_us_init();	// setup microsecond timer
+	timer_comm_sync_init();	// setup timer for communication sync
+	timer_vcxo_control_init();	// setup timer for VCXO control
 }
 
 bool communication::is_ok(){
@@ -117,7 +118,7 @@ void communication::update_timeout(){
 	int64_t diff = get_microseconds() - last_valid_packet_time_us;
 	if(diff > timeout_limit_us){
 		if(!timed_out){
-			//logs->add_log("Communication timeout", message_severities::warning);	// TODO: add a log message
+			logs->add(communication_messages::timeout_warning);
 			reset_communication();	// reset configs so the device is in a known state for reconnection
 		}
 		timed_out = true;
@@ -125,10 +126,24 @@ void communication::update_timeout(){
 }
 
 void communication::timer_us_init(){
-	// setup us counting
+	// setup microsecond counting
+	RCC->APB1ENR |= RCC_APB1ENR_TIM5EN;		// Enable TIM5 Clock
+    __DSB();
+	TIM5->PSC = (SYSCLK*1e6 / 1e6) - 1; // Prescaler to count in microseconds
+    TIM5->EGR |= TIM_EGR_UG; // Generate an update event to update the prescaler
+	TIM5->ARR = 0xFFFFFFFF;  // Max auto-reload value (2^32 - 1)
+    TIM5->DIER |= TIM_DIER_UIE; // Enable update interrupt
+
+	TIM5->CR1 |= TIM_CR1_CEN; // Enable TIM5
+	NVIC_SetPriority(TIM5_IRQn, 14); // Set TIM2 interrupt priority to low
+    NVIC_EnableIRQ(TIM5_IRQn); // Enable TIM5 interrupt
+    microseconds = 0; // Initialize the microseconds counter
+}
+
+void communication::timer_comm_sync_init(){
 	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;		// Enable TIM2 Clock
     __DSB();
-	TIM2->PSC = (SYSCLK*1e6 / 1e6) - 1; // Prescaler to count in microseconds
+	TIM2->PSC = 0; // Prescaler to count at fastest speed (SYSCLK)
     TIM2->EGR |= TIM_EGR_UG; // Generate an update event to update the prescaler
 	TIM2->ARR = 0xFFFFFFFF;  // Max auto-reload value (2^32 - 1)
     TIM2->DIER |= TIM_DIER_UIE; // Enable update interrupt
@@ -136,7 +151,7 @@ void communication::timer_us_init(){
 	// setup input capture to measure serial RX starting edges
 	// TIM2_CH1 pin PA15 is externally connected to USART6 RX pin PA12
 	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;    // Enable GPIOA  Clock
-	GPIOA->MODER |= GPIO_MODER_MODER15_1;	// set PA15 (CH2) as alternate function
+	GPIOA->MODER |= GPIO_MODER_MODER15_1;	// set PA15 (CH1) as alternate function
 	GPIOA->AFR[1] |= 1 << GPIO_AFRH_AFSEL15_Pos;	// set PA15 alternate function to 1 (TIM2)
 
 	TIM2->CCMR1 |= 0b01 << TIM_CCMR1_CC1S_Pos;	// set CH1 to input capture
@@ -144,12 +159,35 @@ void communication::timer_us_init(){
 	TIM2->CCER |= TIM_CCER_CC1E;	// enable capture
 
 	TIM2->CR2 |= 0b101 << TIM_CR2_MMS_Pos;	// use output compare 2 as TRGO output (this is used to reset the main PWM timer)
-
+	// TODO: add a trigger output to TIM5 for syncronizing microsecond timer
 
 	TIM2->CR1 |= TIM_CR1_CEN; // Enable TIM2
 	NVIC_SetPriority(TIM2_IRQn, 14); // Set TIM2 interrupt priority to low
     NVIC_EnableIRQ(TIM2_IRQn); // Enable TIM2 interrupt
-    microseconds = 0; // Initialize the microseconds counter
+}
+
+void communication::timer_vcxo_control_init(){
+	// setup TIM14_CH1 pin PA7 as PWM output compare to control VCXO voltage
+	RCC->APB1ENR |= RCC_APB1ENR_TIM14EN;		// Enable TIM14 Clock
+	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;    // Enable GPIOA  Clock
+	__DSB();
+
+	//GPIOA->MODER &= ~GPIO_MODER_MODER7;	// clear PA7 mode
+	GPIOA->MODER |= GPIO_MODER_MODER7_1;	// set PA7 as alternate function
+	//GPIOA->AFR[0]  &= ~(0xF << GPIO_AFRL_AFSEL7_Pos); // Clear alternate function bits for PA7
+	GPIOA->AFR[0] |= 9 << GPIO_AFRL_AFSEL7_Pos;	// set PA7 alternate function to 9 (TIM12-14)
+
+
+	TIM14->PSC = 0; // Prescaler to count at fastest speed (SYSCLK)
+	TIM14->ARR = (SYSCLK*1e6) / (VCXO_PWM_CLK*1e3) - 1;
+	TIM14->CCR1 = TIM14->ARR / 2; // set duty cycle to 50%
+	TIM14->EGR |= TIM_EGR_UG; // Generate an update event to update the prescaler
+
+	TIM14->CCMR1 |= 0b110 << TIM_CCMR1_OC1M_Pos; // PWM mode 1 on Channel 1
+	TIM14->CCMR1 |= TIM_CCMR1_OC1PE; // Enable preload register on channel 1
+	TIM14->CCER |= TIM_CCER_CC1E; // Enable CH1
+
+	TIM14->CR1 |= TIM_CR1_CEN; // Enable TIM14
 }
 
 void communication::restart_rx_sync_capture(){
@@ -158,49 +196,68 @@ void communication::restart_rx_sync_capture(){
 	TIM2->SR &= ~TIM_SR_CC1OF;	// clear the capture overflow flag
 }
 
-void communication::sync_timer_us(){
-	// uint32_t capture = TIM2->CCR1;	// read the capture register
-	// uint32_t diff = capture % target_rx_period;
-	// int8_t trim = 0;
+void communication::sync_communication_edge(){
+	uint32_t capture = TIM2->CCR1;	// read the capture register
+	volatile uint32_t measured_rx_period;
+	if(capture < last_rx_edge_cnt){	// overflow occurred
+		measured_rx_period = (0xFFFFFFFF+1 - last_rx_edge_cnt) + capture;
+	}
+	else{
+		measured_rx_period = capture - last_rx_edge_cnt;	
+	}
 
-	// if(diff > target_rx_period/2){
-	// 	trim = 1;
-	// }
-	// else if(diff < target_rx_period/2){
-	// 	trim = -1;
-	// }
-}
+	last_rx_edge_cnt = capture;
 
-void communication::set_sync_frequency(uint16_t frequency_hz){
-	target_rx_period = 1e6 / frequency_hz;
-	allowed_period_error = target_rx_period / 20;	// 5% error allowed
-}
+	int32_t sync_error = (int32_t)measured_rx_period - (int32_t)comm_vars->communication_update_interval;	// calculate the error in the period
 
-void communication::set_pwm_timer_sync_offset_us(uint16_t offset_us){
-	pwm_timer_sync_offset_us = offset_us;
+	if(abs(sync_error) > 1000){
+		return; // ignore large errors
+	}
+
+	integral_sync_error += sync_error;	// accumulate the error to ensure we can maintain phase lock
+	if(integral_sync_error > 100) integral_sync_error = 100;	// limit the integral error to prevent overflow
+	if(integral_sync_error < -100) integral_sync_error = -100;	// limit the integral error to prevent overflow
+
+	constexpr int32_t timer_max = (SYSCLK*1e6) / (VCXO_PWM_CLK*1e3);
+	const int32_t integral_sync_deadband = 5;
+
+	int32_t i_val = 0;
+	if(integral_sync_error > integral_sync_deadband) i_val = 1;
+	if(integral_sync_error < -integral_sync_deadband) i_val = -1;
+
+	// adjust VCXO frequency to correct for the error
+	int16_t new_ccr = int16_t(TIM14->CCR1) - sync_error*10 - i_val;	// set the new duty cycle to correct for the error
+	if(new_ccr < 0) new_ccr = 0;	// limit to minimum value
+	if(new_ccr > timer_max) new_ccr = timer_max;	// limit to maximum value
+	TIM14->CCR1 = new_ccr;	// set the new duty cycle
+
 }
 
 void communication::resync_system(){
 	if(!enable_resync) return;
 	enable_resync = false;
-	SysTick->VAL = 0;	// reset the systick counter (note this is not a hardware sync so it is not perfect, but close enough)
+	// SysTick->VAL = 0;	// reset the systick counter (note this is not a hardware sync so it is not perfect, but close enough since it is relatively slow)
 
-	// using the last time of an rx broadcast packet, we can calculate when we want to restart the PWM timer
-	// this we do want to be exact, so we will use hardware sync
+	// // using the last time of an rx broadcast packet, we can calculate when we want to restart the PWM timer
+	// // this we do want to be exact, so we will use hardware sync
 
-	TIM1->BDTR &= ~TIM_BDTR_MOE;	// disable PWM outputs
+	// TIM1->BDTR &= ~TIM_BDTR_MOE;	// disable PWM outputs
 
-	uint32_t reset_time = get_microseconds() + target_rx_period + pwm_timer_sync_offset_us;	// target time
+	// uint32_t reset_time = get_microseconds() + target_rx_period + pwm_timer_sync_offset_us;	// target time
 
-	TIM2->CCER &= ~TIM_CCER_CC2E;	// disable output
-	TIM2->CCMR1 |= 0b100 << TIM_CCMR1_OC2M_Pos;	// force output low
+	// TIM2->CCER &= ~TIM_CCER_CC2E;	// disable output
+	// TIM2->CCMR1 |= 0b100 << TIM_CCMR1_OC2M_Pos;	// force output low
 
-	TIM2->CCR2 = reset_time;	// set the reset time
-	TIM2->CCMR1 |= 0b001 << TIM_CCMR1_OC2M_Pos;	// trigger output high on match
-	TIM2->CCER |= TIM_CCER_CC2E;	// enable output
+	// TIM2->CCR2 = reset_time;	// set the reset time
+	// TIM2->CCMR1 |= 0b001 << TIM_CCMR1_OC2M_Pos;	// trigger output high on match
+	// TIM2->CCER |= TIM_CCER_CC2E;	// enable output
 }
 
 void communication::TIM2_IRQHandler(){
+	
+}
+
+void communication::TIM5_IRQHandler(){
 	us_overflow = true;
 }
 
@@ -208,7 +265,7 @@ uint64_t communication::get_microseconds(){
 	volatile uint64_t us_temp = microseconds & 0xFFFFFFFF00000000; // Clear the lower 32 bits of the microseconds counter
 	us_temp = us_overflow ? us_temp + 0x100000000 : us_temp;	// Add 2^32 to the microseconds counter if there was an overflow
 	us_overflow = false; // Clear the overflow flag
-	us_temp += (TIM2->CNT & 0xFFFFFFFF); // Add the current timer value to the microseconds counter
+	us_temp += (TIM5->CNT & 0xFFFFFFFF); // Add the current timer value to the microseconds counter
     microseconds = us_temp; // copy to global variable
     return microseconds;
 }
@@ -333,7 +390,7 @@ void communication::usart6_interrupt_handler(){
 	if(USART6->SR & USART_SR_IDLE_Msk){		// RX IDLE state detected (incomming transmission over)
         
 		int8_t result = verify_rx_packet();
-		if(result == 0){	// packet addressed to this device
+		if(result == 0 && enabled){	// packet addressed to this device
 			// interpret sequential data
 			interpret_rx_sequential_data();
 			// cyclic data can be interpreted outside of the rx handler
@@ -344,15 +401,24 @@ void communication::usart6_interrupt_handler(){
 			start_transmit();
 			reset_timeout();
 			interpret_rx_cyclic_data();
+			firmware_update_handler();
+
+			if(!comm_vars->enable_cyclic_data != cyclic_mode_enabled){
+				calculate_rx_expected_size();
+			}
+
+			logs->comm_update();
+			sync_communication_edge();	// adjust VCXO frequency to sync with the controller	(TODO: only do this if the packet is a broadcast packet)
 		}
 		else if(result == 1){	// broadcast packet
+			// sync_communication_edge();	// adjust VCXO frequency to sync with the controller
 			reset_timeout();
 		}
 		else{	// invalid packet
 			// do nothing
 		}
 
-		//restart_rx_sync_capture();
+		restart_rx_sync_capture();
 		clear_rx_idle_flag();
 		restart_rx_dma();	// TODO: only do this on invalid packet receive? (maybe)
 		start_receive();
@@ -363,6 +429,10 @@ void communication::usart6_interrupt_handler(){
 		USART6->SR &= ~USART_SR_TC_Msk;	// clear transmission complete flag
 	}
 	
+}
+
+void communication::enable(){
+	enabled = true;
 }
 
 uint32_t communication::calculate_crc(uint32_t *data, uint8_t data_length){
@@ -468,16 +538,6 @@ void communication::interpret_rx_sequential_data(){
 			logs->add(communication_messages::invalid_address);
 		}
 	}
-
-	if(comm_vars->enable_cyclic_data && !cyclic_mode_enabled){
-		calculate_rx_expected_size();
-	}
-	else if (!comm_vars->enable_cyclic_data && cyclic_mode_enabled)
-	{
-		calculate_rx_expected_size();
-	}
-	
-
 }
 
 void communication::interpret_rx_cyclic_data(){
@@ -612,4 +672,17 @@ communication::controller_register_access_result communication::controller_get_r
 		return controller_register_access_result::SUCCESS;
 	}
 	return controller_register_access_result::FAIL;
+}
+
+void communication::firmware_update_handler(){
+	if(comm_vars->firmware_update_data_address == 0xFFFFFFFF){	// firmware update requested
+		// TODO: check if the firmware update is valid (CRC check)
+		// TODO: check the device is in an idle state
+		firm_update.reset_to_new_firmware();	// reset the device to the new firmware
+	}
+	if(comm_vars->firmware_update_data_address != 0x7FFFFFFF){	// new data sent
+		void* data = &comm_vars->firmware_update_data_0;
+		firm_update.write_words(comm_vars->firmware_update_data_address, (uint64_t*)data, 4 * 8);	// write the data to flash (8x 32 bit words)
+		comm_vars->firmware_update_data_address = 0x7FFFFFFF;	// reset the address to indicate the data was received
+	}
 }

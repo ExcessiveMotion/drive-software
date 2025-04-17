@@ -121,7 +121,14 @@
 				"name": "Debug",
 				"cwd": "${workspaceFolder}/firmware",        //Path from where commands are executed
 				"type": "cortex-debug",             //Debug 
-				"executable": "${command:cmake.launchTargetPath}", //or fixed file path: build/project-name.elf
+				"executable": "${workspaceFolder}/firmware/build/Debug/bootloader/bootloader.elf", //or fixed file path: build/project-name.elf
+				"loadFiles": [
+					"${workspaceFolder}/firmware/build/Debug/combined.hex"
+				],
+				"symbolFiles": [
+					"${workspaceFolder}/firmware/build/Debug/bootloader/bootloader.elf",
+					"${workspaceFolder}/firmware/build/Debug/Core/application.elf"
+				],
 				"request": "launch",                //Use "attach" to connect to target w/o elf download
 				"servertype": "stlink",             //Use stlink setup of cortex-M debug
 				"device": "STM32F413RG",            //MCU used

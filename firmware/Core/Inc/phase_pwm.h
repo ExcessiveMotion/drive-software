@@ -15,16 +15,16 @@
 
 #define PWM_ticks 1000*SYSCLK/PWMCLK/2
 
-// Class for managing phase outpuit PWM hardware
+// Class for managing phase output PWM hardware
 class phase_pwm{
     private:
 
       logging* logs;
 
       bool release = false;
-      const float max_duty_cycle = 0.95;
+      const float max_duty_cycle = 0.95f;
       const uint16_t max_pwm_ticks = PWM_ticks * max_duty_cycle;
-      const uint16_t min_pwm_ticks = PWM_ticks * (1-max_duty_cycle);
+      const uint16_t min_pwm_ticks = PWM_ticks * (1.0f-max_duty_cycle);
 
 
     public:
@@ -48,6 +48,8 @@ class phase_pwm{
         void set_raw(uint32_t U, uint32_t V, uint32_t W);
 
         void set_voltage(float U, float V, float W, float dc_bus_voltage);
+
+        void get_voltage(float* U, float* V, float* W, float dc_bus_voltage);
 
         void set_percentange(float U, float V, float W);
 

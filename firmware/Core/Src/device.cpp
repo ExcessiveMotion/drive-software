@@ -11,15 +11,11 @@ device::device(){
 void device::init(){
     CPU_init();
     sysTick_init();
- 
-    #ifdef RELEASE_MODE
-        watchdog_init();
-        PhasePWM.release_mode();
-    #endif
 
     PhasePWM.release_mode();    // bypass safeties... only do this if testing with a low voltage current limited supply
 
     logs.init();
+    logs.comm_vars = comm_vars;
     // Initialize all the low level classes
     Comm.init();
     Fans.init();
@@ -29,6 +25,11 @@ void device::init(){
     Adc.init();
     Sto.init();
 
+    // #ifdef RELEASE_MODE
+    //     //watchdog_init(); // TODO: FIX THIS!
+    //     PhasePWM.release_mode();
+    // #endif
+
 
     micros = Comm.micros;
     logs.microseconds = Comm.micros;
@@ -37,21 +38,24 @@ void device::init(){
     UserIO.micros = Comm.micros;
 
 
-    // todo: get this from the controller
-    Comm.set_sync_frequency(1000); // 1kHz sync frequency
-    Comm.set_pwm_timer_sync_offset_us(0); // no offset
-
     delay_ms(500); // wait for userIO to update
 
     // wait until we have a valid communication address before initializing communication
     Comm.set_device_address(UserIO.get_switch_states());
     
-    delay_ms(500); // wait for communication to update
     Comm.enable_resync = true; // enable resync
 
+    Comm.enable(); // enable communication
 
-    current_mode->request_state(Mode::States::RUN);
-    
+    current_mode->request_state(Mode::States::IDLE);
+
+    logs.clear_all(); // clear any faults from undefined startup
+
+    // check for watchdog reset flag
+    if(RCC->CSR & RCC_CSR_IWDGRSTF){ // watchdog reset flag is set
+        RCC->CSR |= RCC_CSR_RMVF; // clear the reset flag
+        logs.add(system_messages::watchdog_timeout);
+    }
 }
 
 void device::CPU_init(){
@@ -64,10 +68,28 @@ void device::CPU_init(){
 			    | FLASH_ACR_PRFTEN 			// Enable prefetch
 			    | FLASH_ACR_LATENCY_3WS;	// Set Flash latency to 3 wait states
 
+    // attempt to use HSE (25MHz) as the clock source
+    RCC->CR |= RCC_CR_HSEBYP; // Bypass HSE since we are using an external clock source (not a crystal)
+    RCC->CR |= RCC_CR_HSEON; // Enable HSE clock
+
+    for(int i = 0; i < 1000; i++){
+        __NOP(); // wait for HSE to stabilize
+    }
+
+    if(!(RCC->CR & RCC_CR_HSERDY)){ // HSE not available
+        RCC->CR &= ~RCC_CR_HSEON; // disable HSE clock
+    }
+    else{
+        hse_vcxo_available = true; // HSE is available
+    }
+
+    if(!hse_vcxo_available){
+    // internal HSI clock mode
+
     // HSI clock is used as the PLL input clock (16MHz)
     // set VCO to 2Mhz
     // set PLL_N to get SYSCLK*2
-    // set PLL_P to 2 to get SYSCLK for they system
+    // set PLL_P to 2 to get SYSCLK for the system
     // set PLL_Q to 5 (SYSCLK*2 / 5) for USB, SDIO, RNG, must be 48Mhz or lower
     // set PLL_R to 2 (SYSCLK*2 / 2) for I2S, DFSDM, must be 96Mhz or lower
 
@@ -76,7 +98,27 @@ void device::CPU_init(){
 	             | (0 << 16)   // Set PLL_P to 2 (0 in register corresponds to PLL_P = 2). The PLL output frequency is divided by this value to get the system clock.
 	             | (5 << 24)  // Set PLL_Q to 5. This value is used for USB, SDIO, and random number generator clocks
                  | (2 << 28); // Set PLL_R to 2. This value is used for I2S and DFSDM clocks
-	
+    }
+    else{
+    // external HSE clock mode (25MHz)
+
+    // HSE clock is used as the PLL input clock (25MHz)
+    // set VCO to 1.66667 Mhz
+    // set PLL_N to get SYSCLK*2
+    // set PLL_P to 2 to get SYSCLK for the system
+    // set PLL_Q to 5 (SYSCLK*2 / 5) for USB, SDIO, RNG, must be 48Mhz or lower
+    // set PLL_R to 2 (SYSCLK*2 / 2) for I2S, DFSDM, must be 96Mhz or lower
+
+    constexpr uint8_t PLL_N = uint8_t(float(SYSCLK*2.0) / 1.666666666666);
+
+    RCC->PLLCFGR = (15 << 0)    // Set PLL_M to 25. The input clock frequency is divided by this value.
+                 | (PLL_N << 6)  // Set PLL_N, the multiplication factor for the PLL. SYSCLK is presumably defined elsewhere, representing the desired system clock frequency.
+                 | (0 << 16)   // Set PLL_P to 2 (0 in register corresponds to PLL_P = 2). The PLL output frequency is divided by this value to get the system clock.
+                 | (5 << 24)  // Set PLL_Q to 5. This value is used for USB, SDIO, and random number generator clocks
+                 | (2 << 28) // Set PLL_R to 2. This value is used for I2S and DFSDM clocks
+                 | (RCC_PLLCFGR_PLLSRC_HSE); // Set PLL source to HSE
+    }
+
     // Turn on the PLL and wait for it to become stable
 	RCC->CR |= RCC_CR_PLLON;  // Enable the PLL
 	while (!(RCC->CR & RCC_CR_PLLRDY)); // Wait for PLL to be ready (PLL ready flag)
@@ -141,6 +183,9 @@ void device::startup_demo(){
 }
 
 void device::run(){
+    tim1_update_missed = false; // reset missed update flag
+    tim1_up_tim10_flag = false;
+
     while(1){   // main loop
 
         // run flag interrupt handlers
@@ -149,6 +194,9 @@ void device::run(){
         }
         if(tim2_flag){
             flagged_tim2();
+        }
+        if(tim5_flag){
+            flagged_tim5();
         }
         if(i2c1_ev_flag){
             flagged_i2c1_ev();
@@ -165,6 +213,75 @@ void device::run(){
         if(tim1_up_tim10_flag){
             flagged_tim1_up_tim10();
         }
+        if(tim1_update_missed){
+            logs.add(system_messages::control_deadline_missed);
+        }
+
+        // handle requested state changes from controller
+        if(vars.requested_state != last_controller_requested_state){    // new requested state
+            switch(vars.requested_state){
+                case 0:
+                    break; // nothing
+                case 1:
+                    current_mode->request_state(Mode::States::IDLE);
+                    break;
+                case 2:
+                    if(logs.get_active_severity() >= message_severities::error || current_mode == &Default_Mode){
+                        break; // don't try to start if in error state or default mode
+                    }
+                    current_mode->request_state(Mode::States::RUN);
+                    break;
+                case 3:
+                    logs.clear_all(); // clear all faults
+                    break;
+                case 4:
+                    if(current_mode->get_state() == Mode::States::IDLE){    // mode changes only allowed if in IDLE state
+                        switch(vars.device_mode){
+                            case 0:
+                                current_mode = &Default_Mode;
+                                vars.device_mode = 0;
+                                break;
+                            case 1:
+                                current_mode = &FOC_Current;
+                                vars.device_mode = 1;
+                                break;
+                            case 2:
+                                current_mode = &PFC_Mode;
+                                vars.device_mode = 2;
+                                break;
+                            default:
+                                current_mode = &Default_Mode;
+                                vars.device_mode = 0;
+                                logs.add(system_messages::invalid_mode); // invalid mode requested
+                                break;
+                        }
+
+                        if(current_mode->set_sub_mode(vars.device_mode_sub_config)){
+                            logs.add(system_messages::invalid_sub_mode); // invalid sub mode requested
+                            vars.device_mode_sub_config = 0; // reset to default sub mode
+                        }
+                    }
+                    break;
+                default:
+                    logs.add(system_messages::invalid_state); // invalid state requested
+                    break;
+            }
+            last_controller_requested_state = vars.requested_state;
+        }
+
+        // handle error states
+        if(logs.get_active_severity() == message_severities::error){
+            UserIO.set_led_state(0b1000, UserIO.blink_medium);
+            current_mode->request_state(Mode::States::IDLE); // stop the current mode
+        }
+        else if(logs.get_active_severity() == message_severities::critical){
+            UserIO.set_led_state(0b1000, UserIO.blink_fast);
+            current_mode->request_state(Mode::States::IDLE); // stop the current mode
+            critical_shutdown();
+        }
+        else{
+            UserIO.set_led_state(0b1000, UserIO.off); // turn off error LED
+        }
 
         // run additional mode functions
         current_mode->default_run();
@@ -175,8 +292,44 @@ void device::run(){
 }
 
 void device::update(){
+
+    // update temps
+    Adc.get_heatsink_temp(&vars.heatsink_temp);
+    Adc.get_board_temp(&vars.board_temp);
+    Adc.get_air_in_temp(&vars.ambient_temp);
+
+    {
+    float temp = fmax(vars.board_temp, vars.heatsink_temp);  // use whichever temperature is higher
+    if(vars.fan_auto_speed_enable){
+        // set fan speed based on temperature
+        // ramp between 0 and max speed based on temperature
+        if(temp < vars.fan_zero_speed_temp){
+            vars.fan_speed_cmd = 0;
+        }
+        else if(temp > vars.fan_max_speed_temp){
+            vars.fan_speed_cmd = 0xffff;
+        }
+        else{
+            // ramp between 0 and max speed based on temperature
+            float temp_range = float(vars.fan_max_speed_temp - vars.fan_zero_speed_temp);
+            float temp_offset = float(temp - vars.fan_zero_speed_temp);
+            vars.fan_speed_cmd = uint16_t(0xffff * (temp_offset/temp_range));
+        }
+    }
+    else{
+        // set fan speed based on command only
+        // no calculations needed
+    }
+    if(logs.get_active_severity() == message_severities::critical){
+        vars.fan_speed_cmd = 0xffff; // set fan speed to max if in critical state
+    }
     Fans.set_speed(Fans.max_rpm*vars.fan_speed_cmd/0xffff);
     vars.fan_speed_measured = uint16_t(Fans.get_fan_1_speed_rpm() + Fans.get_fan_2_speed_rpm())/2;
+    }
+
+    if(current_mode->get_error_on_comm_timeout() && !Comm.is_ok()){
+        //logs.add(communication_messages::timeout_error); // communication timeout error
+    }
 
     uint32_t dc_mv;
     Adc.get_dc_bus_millivolts(&dc_mv);
@@ -212,10 +365,7 @@ void device::update_leds(){
 }
 
 void device::critical_shutdown(){
-    // Disable all hardware and enter a safe state
-    UserIO.set_led_state(0b1000, UserIO.blink_fast);
-    Fans.set_speed(Fans.max_rpm);
-
+    // Disable power immediately
     PhasePWM.disable();
 }
 
@@ -240,9 +390,19 @@ void device::TIM2_IRQHandler(void){
     tim2_flag = true;
 }
 
+void device::TIM5_IRQHandler(void){
+    TIM5->SR &= ~TIM_SR_UIF; // Clear the update interrupt flag
+    tim5_flag = true;
+}
+
 void device::flagged_tim2(void){
     Comm.TIM2_IRQHandler();
     tim2_flag = false;
+}
+
+void device::flagged_tim5(void){
+    Comm.TIM5_IRQHandler();
+    tim5_flag = false;
 }
 
 void device::I2C1_EV_IRQHandler(void){
@@ -289,6 +449,7 @@ void device::TIM1_UP_TIM10_IRQHandler(void){
 
     if (TIM1->SR & TIM_SR_UIF) { // Check if update interrupt flag is set
         TIM1->SR &= ~TIM_SR_UIF; // Clear update interrupt flag
+        tim1_update_missed |= tim1_up_tim10_flag;
         tim1_up_tim10_flag = true;
     }
 }
@@ -297,13 +458,10 @@ void device::flagged_tim1_up_tim10(void){
     current_mode->default_tim1_up_irq_handler();
     current_mode->tim1_up_irq_handler();
 
-    if(logs.get_active_severity() == message_severities::critical){
-        critical_shutdown();
-    }
-
     Comm.update_timeout();
     watchdog_reload();
     tim1_up_tim10_flag = false;
+    tim1_update_missed = false;
 }
 
 void device::USART6_IRQHandler(void){   // this handler is not flagged since it needs to be called immediately to ensure lowest jitter

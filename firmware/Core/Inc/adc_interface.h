@@ -13,11 +13,6 @@
 #include "device_descriptor.h"
 #include "logging.h"
 
-// sense voltage dividers, integer values only
-#define PHASE_SENSE_DIVIDER 1000000/5000
-#define PFC_SENSE_DIVIDER 1000000/5000
-#define DC_BUS_SENSE_DIVIDER 1000000/5000
-
 
 // Class for managing ADC hardware
 class adc_interface{
@@ -26,25 +21,28 @@ class adc_interface{
         logging* logs;
 
         message_severities fault = message_severities::none;
-
-        uint32_t raw_adc_data[8];   // ADC data is packed from 16bit to 32bit and 16 samples are stored
+        union adc_data{
+            uint32_t data_32[8];   // rx bytes are packed into this array by the DMA
+            uint16_t data_16[16];  // same data as rx_data, but as bytes
+        } raw_adc_data;
 
         uint32_t phase_U_millivolts = 0;
         uint32_t phase_V_millivolts = 0;
         uint32_t phase_W_millivolts = 0;
 
-        uint32_t pfc_U_millivolts = 0;
-        uint32_t pfc_V_millivolts = 0;
-        uint32_t pfc_W_millivolts = 0;
+        uint32_t pfc_millivolts[3] = {0, 0, 0};
+        uint8_t pfc_sense_index = 0; // index of the pfc sense voltage to use for the next sample
 
         uint32_t dc_bus_millivolts = 0;
 
-        int32_t board_temp = 0;       // temp is in 0.001 deg C
-        int32_t mcu_temp = 0;         // temp is in 0.001 deg C
-        int32_t heatsink_1_temp = 0;  // temp is in 0.001 deg C
-        int32_t heatsink_2_temp = 0;  // temp is in 0.001 deg C
+        float board_temp = 0;       // deg C
+        float mcu_temp = 0;
+        float air_in_temp = 0;
+        float heatsink_temp = 0;
 
-        uint32_t gate_supply_millivolts = 0;    // not implemented in hardware
+        uint16_t mcu_temp_val_at_30C_cal = 0;
+        uint16_t mcu_temp_val_at_110C_cal = 0;
+        uint16_t mcu_temp_cnt_per_C = 0;
         
     public:
         adc_interface(logging* logs);
@@ -67,10 +65,8 @@ class adc_interface{
 
         message_severities get_dc_bus_millivolts(uint32_t* millivolts);
         
-        message_severities get_board_temp(int32_t* temp);
-        message_severities get_mcu_temp(int32_t* temp);
-        message_severities get_heatsink_1_temp(int32_t* temp);
-        message_severities get_heatsink_2_temp(int32_t* temp);
-
-        message_severities get_gate_supply_millivolts(uint32_t* millivolts);  // not implemented on hardware
+        message_severities get_board_temp(float* temp);
+        message_severities get_mcu_temp(float* temp);
+        message_severities get_heatsink_temp(float* temp);
+        message_severities get_air_in_temp(float* temp);
 };

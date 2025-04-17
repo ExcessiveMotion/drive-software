@@ -24,6 +24,9 @@ class Mode {
 
         void default_run(void);
         virtual void run(void){}
+        virtual uint32_t set_sub_mode(uint32_t sub_mode){
+            return 0;
+        } // set the sub mode for the current mode
 
         enum class States {
             NONE,
@@ -32,6 +35,8 @@ class Mode {
             //SOFT_SHUTDOWN   // critical shutdown is handled by the device class
         };
         void request_state(States state);
+        States get_state(void) { return current_state; }
+        bool get_error_on_comm_timeout(void) { return error_on_comm_timeout; }
         
 
     private:
@@ -39,7 +44,7 @@ class Mode {
         void safe_stop_pwm(void);   // stop the PWM outputs
         uint32_t current_sense_tries = 0;
         uint32_t high_side_ready_count = 0;
-        const uint32_t max_current_sense_tries = 50;
+        const uint32_t max_current_sense_tries = 60;
         const uint32_t high_side_ready_cycles = 3; // number of cycles to wait for high side gate supplies to charge up (high fets are held high for this period)
 
         void check_current_limits(void);
@@ -54,6 +59,8 @@ class Mode {
         user_io* UserIO;
         adc_interface* Adc;
         device_struct** comm_vars;
+
+        bool error_on_comm_timeout = true;
 
         States current_state = States::IDLE;
         States requested_state = States::IDLE;

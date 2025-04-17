@@ -39,18 +39,28 @@ messages:
   current_sense:
     overcurrent:
       readable_name: "Overcurrent"
-      description: "Measured phase current was too high for the drivers"
+      description: "Measured phase current was too high for the drive"
       severity: "error"
 
     imbalance:
       readable_name: "Current imbalance"
-      description: "Detected leakage current was too high"
+      description: "Measured leakage current was too high"
       severity: "error"
 
+    measurement_not_ready:
+      readable_name: "Current measurement not ready"
+      description: "Current measurement was not ready"
+      severity: "critical"
+
   communication:
-    timeout:
+    timeout_warning:
       readable_name: "Timeout"
       description: "No valid packets received within the timeout period"
+      severity: "warning"
+
+    timeout_error:
+      readable_name: "Timeout error"
+      description: "No valid packets received within the timeout period, and the current state cannot run without communication"
       severity: "error"
 
     invalid_address:
@@ -66,23 +76,65 @@ messages:
   system:
     overtemp:
       readable_name: "Overtemp"
-      description: "Measured temperature was too high"
+      description: "Measured temperature from one of the sensors was too high"
+      severity: "error"
+
+    temp_sensor_fail:
+      readable_name: "Temperature sensor failure"
+      description: "Temperature sensor failure detected, this usually indicates a wiring or hardware fault"
       severity: "error"
 
     overvoltage:
       readable_name: "Overvoltage"
       description: "Measured DC bus voltage was too high"
+      time_delay_us: 5e3  # 5ms
       severity: "critical"
+
+    undervoltage:
+      readable_name: "Undervoltage"
+      description: "Measured DC bus voltage was too low"
+      time_delay_us: 100e3  # 100ms
+      severity: "warning"
 
     floating_voltage_too_high:
       readable_name: "Floating voltage too high"
       description: "Measured voltage on the output phases while off was too high"
+      severity: "error"
+
+    control_deadline_missed:
+      readable_name: "Control deadline missed"
+      description: "Control loop did not run in time"
+      severity: "critical"
+
+    invalid_state:
+      readable_name: "Invalid state"
+      description: "Invalid state selected"
+      severity: "error"
+
+    invalid_mode:
+      readable_name: "Invalid mode"
+      description: "Invalid mode selected"
+      severity: "error"
+
+    invalid_sub_mode:
+      readable_name: "Invalid sub mode"
+      description: "Invalid sub mode selected"
+      severity: "error"
+
+    could_not_start:
+      readable_name: "Could not start"
+      description: "Could not start the selected mode"
+      severity: "error"
+
+    watchdog_timeout:
+      readable_name: "Watchdog timeout"
+      description: "Hardware watchdog triggered the device to reset, this usually indicates a firmware bug or hardware fault"
       severity: "critical"
 
   phase_pwm:
     voltage_saturation:
       readable_name: "Voltage saturation"
-      description: "PWM output voltage was saturated, unable to reach commanded voltage"
+      description: "PWM output was saturated, unable to reach commanded voltage"
       severity: "warning"
 
 
@@ -90,16 +142,18 @@ messages:
     sto_active:
       readable_name: "STO active"
       description: "Safe torque off is active"
-      severity: "critical"
+      severity: "error"
 
     sto_fault_matching_channels:
       readable_name: "Channels do not match"
       description: "STO channel feedback shows channels do not match, this usually indicates a wiring or hardware fault"
+      time_delay_us: 10e3  # 10ms
       severity: "critical"
 
     sto_hardware_fault:
       readable_name: "Hardware fault"
-      description: "STO internal hardware fault detected, feedback channels active when disabled"
+      description: "STO internal hardware fault detected, feedback channels active when they should not be"
+      time_delay_us: 2e3 # 1ms
       severity: "critical"
 
   RL_calib_mode:
@@ -112,6 +166,44 @@ messages:
       readable_name: "Resistance calibration failed"
       description: "Resistance calibration failed, unable to reach calibration current"
       severity: "error"
+
+# pfc mode is designed to not disable unless absolutely necessary, since more power will be dissipated in the fets if they are not being actively controlled
+  # pfc:
+  #   input_voltage_low:
+  #     readable_name: "Input voltage low"
+  #     description: "Measured input voltage was too low"
+  #     severity: "error"
+
+  #   input_voltage_high:
+  #     readable_name: "Input voltage high"
+  #     description: "Measured input voltage was too high"
+  #     severity: "error"
+
+  #   input_current_saturated:
+  #     readable_name: "Input positive current limit reached"
+  #     description: "Input current was too high, positive current limit reached while trying to regulate the dc bus voltage"
+  #     severity: "warning"
+
+  #   input_current_negative_saturated:
+  #     readable_name: "Input negative current limit reached"
+  #     description: "Input reverse current was too high, negative current limit reached while trying to regulate the dc bus voltage"
+  #     severity: "error"
+
+  # regen:
+  #   voltage_saturated:
+  #     readable_name: "Regen voltage limit reached"
+  #     description: "Regen voltage limit reached while trying to regulate the dc bus voltage"
+  #     severity: "warning"
+    
+  #   current_saturated:
+  #     readable_name: "Regen current limit reached"
+  #     description: "Regen current limit reached while trying to regulate the dc bus voltage"
+  #     severity: "warning"
+
+  #   resistance_mismatch:
+  #     readable_name: "Regen resistance mismatch"
+  #     description: "Regen resistance mismatch detected, this usually indicates an incorrect configuration or wiring fault"
+  #     severity: "error"
 
 
 
@@ -158,6 +250,12 @@ hard_parameters:
     readable_name: "Max fan speed"
     description: "Maximum fan speed in RPM"
 
+  adc_hv_sense_divider:
+    value: 225
+    var_type: "float"
+    unit: "volts"
+    readable_name: "ADC HV sense divider"
+    description: "Divider for the high voltage sense ADC inputs"
 
   shunt_resistance:
     value: 0.005
@@ -181,33 +279,46 @@ hard_parameters:
     description: "Overvoltage protection will trip if the bus rises above this value."
 
   max_phase_current:
-    value: 10000
+    value: 20000
     var_type: "uint16_t"
     unit: "milliamps"
     readable_name: "Max allowed phase current"
     description: "Maximum current allowed through an output phase before overcurrent protection is tripped."
 
   max_imbalance_current:
-    value: 500
+    value: 1500
     var_type: "uint16_t"
     unit: "milliamps"
     readable_name: "Max allowed phase current imbalance"
     description: "Maximum difference allowed between phase currents before overcurrent protection is tripped."
 
-
   heatsink_over_temp_limit:
-    value: 50
+    value: 55
     var_type: "uint8_t"
     unit: "celsius"
     readable_name: "Heatsink overtemp limit"
     description: "Heatsink temperature at which overheat protection will trip"
 
   board_over_temp_limit:
-    value: 50
+    value: 55
     var_type: "uint8_t"
     unit: "celsius"
     readable_name: "PCB overtemp limit"
     description: "PCB temperature at which overheat protection will trip"
+
+  board_ntc_therm_beta:
+    value: 3500
+    var_type: "uint16_t"
+    unit: "k"
+    readable_name: "NTC thermistor beta value"
+    description: "Beta value of the NTC thermistor used to measure PCB temperature"
+
+  heatsink_ntc_therm_beta:
+    value: 3950
+    var_type: "uint16_t"
+    unit: "k"
+    readable_name: "NTC thermistor beta value"
+    description: "Beta value of the NTC thermistors used to measure heatsink and ambient air temperature"
 
   sysclk:
     value: 100
@@ -215,6 +326,13 @@ hard_parameters:
     unit: "Mhz"
     readable_name: "System clock frequency"
     description: "System clock frequency"
+
+  vcxo_pwm_clk:
+    value: 2
+    var_type: "uint16_t"
+    unit: "khz"
+    readable_name: "VCXO PWM clock frequency"
+    description: "VCXO PWM clock frequency"
 
   systick_frequency:
     value: 100
@@ -298,12 +416,44 @@ hard_parameters:
 registers:
 # values meant to be read/written by the controller to configure and use the device
 
+  communication_update_interval:
+    value: 200000
+    var_type: "uint32_t"
+    unit: "10ns"
+    readable_name: "Communication update interval"
+    description: "How often the controller sends a packet to the device, this is used for clock synchronization. note that is must be an even multiple of main PWM frequency"
+    permissions: "read/write"
+
+  pwm_timer_phase_offset:
+    value: 0
+    var_type: "uint32_t"
+    unit: "counts"
+    readable_name: "PWM timer phase offset"
+    description: "How many counts to delay the start of the main phase PWM timer when synchronizing with the controller"
+    permissions: "read/write"
+
+  enable_controller_syncronization:
+    value: 1
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Enable controller synchronization"
+    description: "Enable or disable the controller synchronization feature, this is used to synchronize the device clock with the controller"
+    permissions: "read/write"
+
+  controller_syncronization_valid:
+    value: 0
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Controller synchronization is ok"
+    description: "Indicates if the device is synchronized with the controller"
+    permissions: "read"
+
   fan_speed_cmd:
     value: 0
     var_type: "uint16_t"
     unit: ""
     readable_name: "Fan speed"
-    description: "Fan speed in max rpm/0xffff"
+    description: "Cmd fan speed (max 0xffff)"
     permissions: "read/write"
 
   fan_speed_measured:
@@ -311,8 +461,72 @@ registers:
     var_type: "uint16_t"
     unit: ""
     readable_name: "Measured fan speed"
-    description: "Measured fan speed in max rpm/0xffff"
+    description: "Measured fan speed (max 0xffff)"
     permissions: "read"
+
+  fan_auto_speed_enable:
+    value: 1
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Auto fan speed enable"
+    description: "Enable automatic fan speed control"
+    permissions: "read/write"
+
+  fan_zero_speed_temp:
+    value: 30
+    var_type: "uint8_t"
+    unit: "celsius"
+    readable_name: "Fan zero speed temperature"
+    description: "Temperature at/below which the fan will be off"
+    permissions: "read/write"
+
+  fan_max_speed_temp:
+    value: 40
+    var_type: "uint8_t"
+    unit: "celsius"
+    readable_name: "Fan max speed temperature"
+    description: "Temperature at/above which the fan will be at max speed"
+    permissions: "read/write"
+
+  heatsink_temp:
+    value: 0
+    var_type: "float"
+    unit: "celsius"
+    readable_name: "Heatsink temperature"
+    description: "Measured heatsink temperature"
+    permissions: "read"
+  
+  board_temp:
+    value: 0
+    var_type: "float"
+    unit: "celsius"
+    readable_name: "PCB temperature"
+    description: "Measured PCB temperature"
+    permissions: "read"
+
+  ambient_temp:
+    value: 0
+    var_type: "float"
+    unit: "celsius"
+    readable_name: "Ambient temperature"
+    description: "Measured ambient temperature"
+    permissions: "read"
+
+  current_limit_q:
+    value: 10000
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "q axis current limit"
+    description: "Maximum current cmd allowed through the q axis"
+    permissions: "read/write"
+
+  current_limit_d:
+    value: 1000
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "d axis current limit"
+    description: "Maximum current cmd allowed through the d axis"
+    permissions: "read/write"
 
   current_command_q:
     value: 0
@@ -346,12 +560,44 @@ registers:
     description: "Actual measured d current through motor"
     permissions: "read"
 
+  phase_resistance:
+    value: 1.3
+    var_type: "float"
+    unit: "ohms"
+    readable_name: "Phase resistance"
+    description: "Phase resistance between 2 motor terminals"
+    permissions: "read/write"
+
   commutation_command:
     value: 0
     var_type: "uint16_t"
     unit: "counts"
     readable_name: "Electrical commutation command"
-    description: "Value 0-65525 representing the current electrical angle of the motor"
+    description: "Value 0-65525 representing the current electrical angle of the motor (or an even multiple of it)"
+    permissions: "read/write"
+
+  commutation_offset:
+    value: 0
+    var_type: "uint16_t"
+    unit: "counts"
+    readable_name: "Electrical commutation offset"
+    description: "Offset to add to the commutation command, applied after the scale factor"
+    permissions: "read/write"
+
+  commutation_scale:
+    value: 1
+    var_type: "uint16_t"
+    unit: ""
+    readable_name: "Electrical commutation scale"
+    description: "How many electrical cycles are in one commutation command cycle"
+    permissions: "read/write"
+
+  calibration_current:
+    value: 5000
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "calibration current for all calibrations"
+    description: "Current to use for all calibration modes"
     permissions: "read/write"
   
   dc_bus_voltage:
@@ -363,7 +609,7 @@ registers:
     permissions: "read"
   
   current_loop_p_gain:
-    value: 0.0
+    value: 50.0
     var_type: "float"
     unit: ""
     readable_name: "Proportional gain for current loop"
@@ -371,7 +617,7 @@ registers:
     permissions: "read/write"
 
   current_loop_i_gain:
-    value: 0.0
+    value: 1.0
     var_type: "float"
     unit: ""
     readable_name: "Integral gain for current loop"
@@ -379,19 +625,131 @@ registers:
     permissions: "read/write"
 
   current_loop_i_limit:
-    value: 0.0
+    value: 300.0
     var_type: "float"
     unit: ""
     readable_name: "Integral limit for current loop"
     description: "Integral limit for current loop"
     permissions: "read/write"
+
+  current_loop_voltage_change_limit:
+    value: 100e3
+    var_type: "float"
+    unit: "V/s"
+    readable_name: "Voltage change limit for current loop"
+    description: "Voltage change limit for current loop"
+    permissions: "read/write"
   
   max_ouput_voltage:
-    value: 50
+    value: 300
     var_type: "uint16_t"
     unit: "volts"
     readable_name: "Maximum output voltage"
     description: "Maximum output voltage (PWM dutycycle)"
+    permissions: "read/write"
+
+  pfc_target_voltage:
+    value: 36000
+    var_type: "uint16_t"
+    unit: "millivolts"
+    readable_name: "PFC target voltage"
+    description: "Target voltage for the PFC, this is used to regulate the DC bus voltage"
+    permissions: "read/write"
+
+  pfc_max_positive_current:
+    value: 1000
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "PFC max positive current"
+    description: "Max current input to the drive from mains"
+    permissions: "read/write"
+
+  pfc_max_negative_current:
+    value: 1000
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "PFC max negative current"
+    description: "Max current output from the drive to mains"
+    permissions: "read/write"
+
+  pfc_voltage_p_gain:
+    value: .5
+    var_type: "float"
+    unit: ""
+    readable_name: "PFC voltage gain"
+    description: "Voltage gain for the PFC, this is used to regulate the DC bus voltage"
+    permissions: "read/write"
+
+  pfc_voltage_i_gain:
+    value: 0.002
+    var_type: "float"
+    unit: ""
+    readable_name: "PFC voltage integral gain"
+    description: "Integral gain for the PFC, this is used to regulate the DC bus voltage"
+    permissions: "read/write"
+
+  pfc_voltage_i_limit:
+    value: 30.0
+    var_type: "float"
+    unit: ""
+    readable_name: "PFC voltage integral limit"
+    description: "Integral limit for the PFC, this is used to regulate the DC bus voltage"
+    permissions: "read/write"
+
+  pfc_current_p_gain:
+    value: 10.0
+    var_type: "float"
+    unit: ""
+    readable_name: "PFC current gain"
+    description: "Current gain for the PFC, this is used to regulate the DC bus voltage"
+    permissions: "read/write"
+
+  pfc_current_i_gain:
+    value: 0.00
+    var_type: "float"
+    unit: ""
+    readable_name: "PFC current integral gain"
+    description: "Integral gain for the PFC, this is used to regulate the DC bus voltage"
+    permissions: "read/write"
+
+  pfc_current_i_limit:
+    value: 0.0
+    var_type: "float"
+    unit: ""
+    readable_name: "PFC current integral limit"
+    description: "Integral limit for the PFC, this is used to regulate the DC bus voltage"
+    permissions: "read/write"
+
+  regen_resistance:
+    value: 15.0
+    var_type: "float"
+    unit: "ohms"
+    readable_name: "Regen resistance"
+    description: "Resistance of the regen resistor"
+    permissions: "read/write"
+
+  regen_max_current:
+    value: 40000
+    var_type: "uint16_t"
+    unit: "milliamps"
+    readable_name: "Regen peak current"
+    description: "Peak regen current limit"
+    permissions: "read/write"
+
+  regen_ramp_start:
+    value: 38
+    var_type: "float"
+    unit: "volts"
+    readable_name: "Regen ramp start"
+    description: "Regen ramp start voltage, where energy will start being sent to the regen resistor"
+    permissions: "read/write"
+
+  regen_ramp_end:
+    value: 42
+    var_type: "float"
+    unit: "volts"
+    readable_name: "Regen ramp end"
+    description: "Regen ramp end voltage, where energy will be sent to the regen resistor at max power"
     permissions: "read/write"
   
   requested_state:
@@ -399,11 +757,60 @@ registers:
     var_type: "uint8_t"
     unit: ""
     readable_name: "Requested drive state"
-    description: "FAULT: 1, IDLE: 2, RUN: 3"
+    description: "IDLE: 1, RUN: 2, FAULT_RESET: 3, CHANGE_MODE: 4"
     permissions: "read/write"
+
+  device_mode:
+    value: 0
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Device mode"
+    description: "0: DEFAULT, 1: FOC, 2: PFC + REGEN, 3: REGEN"
+    permissions: "read/write"
+
+  device_mode_sub_config:
+    value: 0
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Device mode sub config"
+    description: "configuration for the selected device mode, this varies based on the mode selected"
+    permissions: "read/write"
+  
 
 
   ####################### COMMUNICATION REGISTERS #######################
+
+  dummy_register:
+    value: 0
+    var_type: "uint8_t"
+    unit: ""
+    readable_name: "Dummy register"
+    description: "Dummy register for pointing cyclic regs to when not in use"
+    permissions: "read/write"
+
+  message_control:
+    value: 0
+    var_type: "uint16_t"
+    unit: ""
+    readable_name: "Message control"
+    description: "Selects the message to read back"
+    permissions: "read/write"
+
+  message_time_lower:
+    value: 0
+    var_type: "uint32_t"
+    unit: "microseconds"
+    readable_name: "Message time upper 32 bits"
+    description: "last time that the selected message was triggered"
+    permissions: "read"
+
+  message_time_upper:
+    value: 0
+    var_type: "uint32_t"
+    unit: "microseconds"
+    readable_name: "Message time lower 32 bits"
+    description: "last time that the selected message was triggered"
+    permissions: "read"
 
   device_communication_watchdog_timeout:
     value: 1
@@ -435,6 +842,14 @@ registers:
     unit: "address"
     readable_name: "Cyclic write address"
     description: "Set to a register address to enable continuous cyclic writing"
+    permissions: "read/write"
+
+  firmware_update_data_address:
+    value: 0x7FFFFFFF
+    var_type: "uint32_t"
+    unit: "address"
+    readable_name: "Firmware update data address and control"
+    description: "Base address for firmware update data, and control register, write to 0xFFFFFFFF to start the firmware update process(MUST HAVE A VALID FIRMWARE IMAGE ALREADY IN FLASH)"
     permissions: "read/write"
 
   firmware_update_data_0:
@@ -469,7 +884,37 @@ registers:
     description: "Used to transfer firmware data during a device firmware update"
     permissions: "read/write"
 
+  firmware_update_data_4:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
 
+  firmware_update_data_5:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
+
+  firmware_update_data_6:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
+
+  firmware_update_data_7:
+    value: 0
+    var_type: "uint32_t"
+    unit: "binary data"
+    readable_name: "Firmware update data"
+    description: "Used to transfer firmware data during a device firmware update"
+    permissions: "read/write"
 
 
 

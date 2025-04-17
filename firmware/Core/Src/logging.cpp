@@ -6,7 +6,6 @@ void logging::init(){
     // reset times
     memset(last_active_error_times_micros, 0, sizeof(uint64_t)*identifiers_count);
     memset(last_ok_error_times_micros, 0, sizeof(uint64_t)*identifiers_count);
-    memset(persistent_error_trigger_times_micros, 0, sizeof(uint32_t)*identifiers_count);
 }
 
 message_severities logging::get_active_severity(void){
@@ -42,7 +41,7 @@ message_severities logging::add(uint32_t  id){
 }
 
 message_severities logging::log_persistent_active(uint32_t id){
-    if(last_ok_error_times_micros[uint32_t(id)] + persistent_error_trigger_times_micros[uint32_t(id)] >= *microseconds){
+    if(last_ok_error_times_micros[uint32_t(id)] + message_delays[uint32_t(id)] <= *microseconds){
         // the id has been active for long enough
         add(id);
     }
@@ -54,7 +53,7 @@ message_severities logging::log_persistent_inactive(uint32_t id){
     return active_severity;
 }
 
-void logging::set_persistent_error_trigger_time(uint32_t id, uint32_t time){
-    persistent_error_trigger_times_micros[uint32_t(id)] = time;
+void logging::comm_update(void){
+    comm_vars->message_time_lower = last_active_error_times_micros[comm_vars->message_control] & 0xFFFFFFFF;
+    comm_vars->message_time_upper = last_active_error_times_micros[comm_vars->message_control] >> 32;
 }
-

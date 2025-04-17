@@ -13,6 +13,7 @@
 #include <memory.h>
 #include "device_descriptor.h"
 #include "logging.h"
+#include "firmware_update.h"
 
 #define MAX_PACKET_SIZE 4+CYCLIC_ADDRESS_COUNT
 // Class for managing uart hardware
@@ -20,6 +21,8 @@ class communication{
     private:
 
         logging* logs;
+
+        bool enabled = false;
 
         //TODO: find out if the 32bit array is even needed by the DMA
         union rx_data{
@@ -89,20 +92,21 @@ class communication{
 
 
         void timer_us_init(void);
-        void sync_timer_us(void);
+        void sync_communication_edge(void);
+        void timer_comm_sync_init(void);
+        void timer_vcxo_control_init(void);
         void restart_rx_sync_capture(void);
         //void save_rx_sync_time(void); // this should be called right after a packet is received
         void resync_system(void); // restarts all timers to sync with the controller
-        uint32_t rx_edge_time = 0;
-        uint32_t rx_period = 0;
-        uint32_t target_rx_period = 0;
-        uint32_t allowed_period_error = 0;  // maximum syncronization error that will allow clock adjustment
-        uint16_t pwm_timer_sync_offset_us = 0; // offset to sync pwm timer with controller
+        uint32_t last_rx_edge_cnt = 0;
+        int32_t integral_sync_error = 0;
 
         void reset_communication(void); // resets cylic configs and disables cyclic mode
+
+        firmware_update firm_update;
+        void firmware_update_handler(void); // handles firmware update requests from the controller
+
         
-
-
     public:
         // the DEVICE may read/write to ALL registers, regardless of their read/write setting in device_descriptor.h
         // the CONTROLLER however can only read/write to/from the register if the permission is set
@@ -118,8 +122,7 @@ class communication{
         void init(void);
 
         void set_device_address(uint8_t address);
-        void set_sync_frequency(uint16_t frequency_hz);
-        void set_pwm_timer_sync_offset_us(uint16_t offset_us);
+        void enable(void);
         bool enable_resync = false;  // resets all timers on the next broascast packet
         
 
@@ -141,5 +144,6 @@ class communication{
         void usart6_interrupt_handler(void);
 
         void TIM2_IRQHandler(void);
+        void TIM5_IRQHandler(void);
 
 };

@@ -32,97 +32,147 @@ set(CPU_PARAMETERS
     -mfloat-abi=hard
 )
 
-# Set linker script
-set(linker_script_SRC               ${PROJ_PATH}/STM32F413RGTX_FLASH.ld)
-set(EXECUTABLE                      ${CMAKE_PROJECT_NAME})
+# Add subdirectories for bootloader and application
+add_subdirectory(Bootloader)
+add_subdirectory(Core)
 
-#
-# List of source files to compile
-#
-file(GLOB_RECURSE sources_SRCS
-    ${PROJ_PATH}/Core/Src/*.cpp
-    ${PROJ_PATH}/Core/Src/*.c
-    ${PROJ_PATH}/Core/Startup/*.s
-)
-
-#
-# Include directories
-#
-set(include_path_DIRS
-    ${PROJ_PATH}/Core/Inc
-    ${PROJ_PATH}/Drivers/CMSIS/Device/ST/STM32F4xx/Include
-    ${PROJ_PATH}/Drivers/CMSIS/Include
-)
-
-#
-# Symbols definition
-#
-set(symbols_SYMB
-    "DEBUG"
-    "STM32F413xx"
-    "HSE_VALUE=16000000"
-)
-
-# Executable files
-add_executable(${EXECUTABLE} ${sources_SRCS})
-
-# Include paths
-target_include_directories(${EXECUTABLE} PRIVATE ${include_path_DIRS})
-
-# Project symbols
-target_compile_definitions(${EXECUTABLE} PRIVATE ${symbols_SYMB})
-
-# Compiler options
-target_compile_options(${EXECUTABLE} PRIVATE
-    ${CPU_PARAMETERS}
-    -Wall
-    -Wextra
-    -Wpedantic
-    -Wno-unused-parameter
-    # Full debug configuration
-    -Og -g3 -ggdb
-)
-
-# Linker options
-target_link_options(${EXECUTABLE} PRIVATE
-    -T${linker_script_SRC}
-    ${CPU_PARAMETERS}
-    -Wl,-Map=${CMAKE_PROJECT_NAME}.map
-    --specs=nosys.specs
-    -u _printf_float                # STDIO float formatting support
-    -Wl,--start-group
-    -lc
-    -lm
-    -lstdc++
-    -lsupc++
-    -Wl,--end-group
-    -Wl,--print-memory-usage
-)
-
-# Generate device_descriptor.h using Python script
+# Define paths to the output binaries.
+# Assume bootloader produces target "bootloader" and application produces target "application".
+# The following variables refer to the ELF outputs (you can then use objcopy to convert them into binary format).
+set(BOOTLOADER_ELF $<TARGET_FILE:bootloader>)
+set(APPLICATION_ELF $<TARGET_FILE:application>)
+# Create custom commands to convert each ELF to a HEX file.
+# Using the standard objcopy tool which is typically part of the gcc arm toolchain.
 add_custom_command(
-    OUTPUT ${PROJ_PATH}/Core/Inc/device_descriptor.h
-    COMMAND .venv/Scripts/python autoGen.py
-    WORKING_DIRECTORY ${PROJ_PATH}/../python
+  OUTPUT bootloader.hex
+  COMMAND arm-none-eabi-objcopy -O ihex ${BOOTLOADER_ELF} bootloader.hex
+  DEPENDS bootloader
+  COMMENT "Converting bootloader ELF to HEX"
 )
 
-# Custom target to generate device_descriptor.h
-add_custom_target(generate_device_descriptor_h DEPENDS ${PROJ_PATH}/Core/Inc/device_descriptor.h)
-
-# Make the main target depend on the custom target
-add_dependencies(${PROJECT_NAME} generate_device_descriptor_h)
-
-# Execute post-build to print size
-add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
-    COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${EXECUTABLE}>
+add_custom_command(
+  OUTPUT application.hex
+  COMMAND arm-none-eabi-objcopy -O ihex ${APPLICATION_ELF} application.hex
+  DEPENDS application
+  COMMENT "Converting application ELF to HEX"
 )
 
-# Convert output to hex and binary
-add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${EXECUTABLE}> ${EXECUTABLE}.hex
+# create the binary for field firmware updates
+add_custom_command(
+  OUTPUT application.bin
+  COMMAND arm-none-eabi-objcopy -O binary ${APPLICATION_ELF} application.bin
+  DEPENDS application
+  COMMENT "Converting application ELF to BIN"
 )
 
-# Convert to bin file -> add conditional check?
-# add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
-#     COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${EXECUTABLE}> ${EXECUTABLE}.bin
+add_custom_target(convert_hex ALL DEPENDS bootloader.hex application.hex application.bin)
+
+# Create a custom target that fuses bootloader and application into one final binary.
+add_custom_command(
+  OUTPUT combined.hex
+  COMMAND ${CMAKE_COMMAND} -E echo "Merging binaries with merge_hex.py..."
+  COMMAND ${PROJ_PATH}/../python/.venv/Scripts/python ${PROJ_PATH}/../python/merge_hex.py 
+          bootloader.hex application.hex combined.hex
+  DEPENDS bootloader.hex application.hex
+  COMMENT "Creating combined binary image"
+)
+
+add_custom_target(combined ALL DEPENDS combined.hex)
+
+
+
+
+# # Set linker script
+# set(linker_script_SRC               ${PROJ_PATH}/STM32F413RGTX_FLASH.ld)
+# set(EXECUTABLE                      ${CMAKE_PROJECT_NAME})
+
+# #
+# # List of source files to compile
+# #
+# file(GLOB_RECURSE sources_SRCS
+#     ${PROJ_PATH}/Core/Src/*.cpp
+#     ${PROJ_PATH}/Core/Src/*.c
+#     ${PROJ_PATH}/Core/Startup/*.s
 # )
+
+# #
+# # Include directories
+# #
+# set(include_path_DIRS
+#     ${PROJ_PATH}/Core/Inc
+#     ${PROJ_PATH}/Drivers/CMSIS/Device/ST/STM32F4xx/Include
+#     ${PROJ_PATH}/Drivers/CMSIS/Include
+# )
+
+# #
+# # Symbols definition
+# #
+# set(symbols_SYMB
+#     "DEBUG"
+#     "STM32F413xx"
+#     "HSE_VALUE=16000000"
+# )
+
+# # Executable files
+# add_executable(${EXECUTABLE} ${sources_SRCS})
+
+# # Include paths
+# target_include_directories(${EXECUTABLE} PRIVATE ${include_path_DIRS})
+
+# # Project symbols
+# target_compile_definitions(${EXECUTABLE} PRIVATE ${symbols_SYMB})
+
+# # Compiler options
+# target_compile_options(${EXECUTABLE} PRIVATE
+#     ${CPU_PARAMETERS}
+#     -Wall
+#     -Wextra
+#     -Wpedantic
+#     -Wno-unused-parameter
+#     # Full debug configuration
+#     -Og -g3 -ggdb
+# )
+
+# # Linker options
+# target_link_options(${EXECUTABLE} PRIVATE
+#     -T${linker_script_SRC}
+#     ${CPU_PARAMETERS}
+#     -Wl,-Map=${CMAKE_PROJECT_NAME}.map
+#     --specs=nosys.specs
+#     -u _printf_float                # STDIO float formatting support
+#     -Wl,--start-group
+#     -lc
+#     -lm
+#     -lstdc++
+#     -lsupc++
+#     -Wl,--end-group
+#     -Wl,--print-memory-usage
+# )
+
+# # Generate device_descriptor.h using Python script
+# add_custom_command(
+#     OUTPUT ${PROJ_PATH}/Core/Inc/device_descriptor.h
+#     COMMAND .venv/Scripts/python autoGen.py
+#     WORKING_DIRECTORY ${PROJ_PATH}/../python
+# )
+
+# # Custom target to generate device_descriptor.h
+# add_custom_target(generate_device_descriptor_h DEPENDS ${PROJ_PATH}/Core/Inc/device_descriptor.h)
+
+# # Make the main target depend on the custom target
+# add_dependencies(${PROJECT_NAME} generate_device_descriptor_h)
+
+# # Execute post-build to print size
+# add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
+#     COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${EXECUTABLE}>
+# )
+
+# # Convert output to hex and binary
+# add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
+#     COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${EXECUTABLE}> ${EXECUTABLE}.hex
+# )
+
+# # Convert to bin file -> add conditional check?
+# # add_custom_command(TARGET ${EXECUTABLE} POST_BUILD
+# #     COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${EXECUTABLE}> ${EXECUTABLE}.bin
+# # )

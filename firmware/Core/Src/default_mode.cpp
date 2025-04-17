@@ -15,7 +15,7 @@ Mode::Mode(logging* logs, fans* Fans, current_sense_interface* CurrentSense, pha
 void Mode::safe_start_pwm(void){
     switch (safe_start_step){
         case safe_start_steps::ENABLE_STO:{
-            if(Sto->enable() == message_severities::none){
+            if(Sto->enable() < message_severities::error){
                 safe_start_step = safe_start_steps::VERIFY_STO;
             }
             else{
@@ -26,7 +26,7 @@ void Mode::safe_start_pwm(void){
 
         case safe_start_steps::VERIFY_STO:{
             bool output_allowed = false;
-            if(Sto->output_allowed(&output_allowed) == message_severities::none && output_allowed){
+            if(Sto->output_allowed(&output_allowed) < message_severities::error && output_allowed){
                 safe_start_step = safe_start_steps::CHECK_ADC_VOLTAGES;
             }
             else{
@@ -41,16 +41,16 @@ void Mode::safe_start_pwm(void){
             uint32_t phase_V = 0;
             uint32_t phase_W = 0;
 
-            if(Adc->get_dc_bus_millivolts(&dc) != message_severities::none){
+            if(Adc->get_dc_bus_millivolts(&dc) >= message_severities::error){
                 safe_start_step = safe_start_steps::FAULT;
             }
-            else if(Adc->get_phase_U_millivolts(&phase_U) != message_severities::none){
+            else if(Adc->get_phase_U_millivolts(&phase_U) >= message_severities::error){
                 safe_start_step = safe_start_steps::FAULT;
             }
-            else if(Adc->get_phase_V_millivolts(&phase_V) != message_severities::none){
+            else if(Adc->get_phase_V_millivolts(&phase_V) >= message_severities::error){
                 safe_start_step = safe_start_steps::FAULT;
             }
-            else if(Adc->get_phase_W_millivolts(&phase_W) != message_severities::none){
+            else if(Adc->get_phase_W_millivolts(&phase_W) >= message_severities::error){
                 safe_start_step = safe_start_steps::FAULT;
             }
             else if(dc > MAX_DC_BUS_VOLTAGE*1000){
@@ -109,23 +109,14 @@ void Mode::safe_start_pwm(void){
 }
 
 void Mode::safe_stop_pwm(void){
-    switch (safe_stop_step){
-        case safe_stop_steps::ON:{
-            safe_stop_step = safe_stop_steps::DISABLE_PWM;
-            break;
-        }
-
-        case safe_stop_steps::DISABLE_PWM:{
-            PhasePWM->disable();
-            safe_stop_step = safe_stop_steps::DONE;
-            break;
-        }
-    }
+    PhasePWM->disable();
+    Sto->disable();
+    safe_start_step = safe_start_steps::OFF;
 }
 
 void Mode::default_tim1_up_irq_handler(void){
     if(CurrentSense->get_currents()){
-        // fault, current measurement not complete
+        logs->add(current_sense_messages::measurement_not_ready);
         return;
     }
 
@@ -144,22 +135,17 @@ void Mode::default_tim1_up_irq_handler(void){
                 if(safe_start_step == safe_start_steps::FAULT){
                     safe_start_step = safe_start_steps::OFF;
                     requested_state = States::IDLE;
-                    // TODO: trigger a fault
+                    logs->add(system_messages::could_not_start);
+                    break;
                 }
                 safe_start_pwm();
 
                 if(safe_start_step == safe_start_steps::DONE){
                     current_state = States::RUN;
-                    safe_stop_step = safe_stop_steps::ON;
                 }
             }
             else if(requested_state == States::IDLE){
-                safe_stop_step = safe_stop_steps::ON;
                 safe_stop_pwm();
-
-                if(safe_stop_step == safe_stop_steps::DONE){
-                    current_state = States::IDLE;
-                }
             }
             break;
         }
@@ -167,10 +153,7 @@ void Mode::default_tim1_up_irq_handler(void){
         case States::RUN:{
             if(requested_state == States::IDLE){
                 safe_stop_pwm();
-
-                if(safe_stop_step == safe_stop_steps::DONE){
-                    current_state = States::IDLE;
-                }
+                current_state = States::IDLE;
             }
             break;
         }
@@ -189,7 +172,7 @@ void Mode::request_state(States state){
 }
 
 void Mode::check_current_limits(void){
-    if(safe_start_step != safe_start_steps::DONE){  // skip current checks if PWM is not on
+    if(!PhasePWM->is_enabled() || safe_start_step != safe_start_steps::DONE){  // skip current checks if PWM is not on
         return;
     }
 
@@ -200,12 +183,10 @@ void Mode::check_current_limits(void){
     // fault if any phase current is over the limit
     if(abs(U_ma) > MAX_PHASE_CURRENT || abs(V_ma) > MAX_PHASE_CURRENT || abs(W_ma) > MAX_PHASE_CURRENT){
         logs->add(current_sense_messages::overcurrent);
-        request_state(States::IDLE);
     }
 
     // fault if imbalance is too high
     if(abs(U_ma + V_ma + W_ma) > MAX_IMBALANCE_CURRENT){
         logs->add(current_sense_messages::imbalance);
-        request_state(States::IDLE);
     }
 }
