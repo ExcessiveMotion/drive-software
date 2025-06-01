@@ -52,20 +52,20 @@ bool sto::check_fault(){
 	bool fault = false;
 	// check both feedback signals are the same
 	if((GPIOC->IDR & GPIO_IDR_ID11)>>GPIO_IDR_ID11_Pos != (GPIOC->IDR & GPIO_IDR_ID12)>>GPIO_IDR_ID12_Pos){
-		log->log_persistent_active(sto_messages::sto_fault_matching_channels);		// return signifying a fault, feedback signals do not match
+		log->log_persistent_active((uint32_t)sto_messages::sto_fault_matching_channels);		// return signifying a fault, feedback signals do not match
 		fault = true;
 	}
 	else{
-		log->log_persistent_inactive(sto_messages::sto_fault_matching_channels);		// clear the fault
+		log->log_persistent_inactive((uint32_t)sto_messages::sto_fault_matching_channels);		// clear the fault
 	}
 
 	if(!(GPIOC->ODR & GPIO_ODR_OD10)){		// MCU STO output enable is off
 		if(!(GPIOC->IDR & GPIO_IDR_ID11) || !(GPIOC->IDR & GPIO_IDR_ID12)){
-			log->log_persistent_active(sto_messages::sto_hardware_fault);		// return signifying a fault, feedback is not allowed to be on(inverted) if the enable is off
+			log->log_persistent_active((uint32_t)sto_messages::sto_hardware_fault);		// return signifying a fault, feedback is not allowed to be on(inverted) if the enable is off
 			fault = true;
 		}
 		else{
-			log->log_persistent_inactive(sto_messages::sto_hardware_fault);		// clear the fault
+			log->log_persistent_inactive((uint32_t)sto_messages::sto_hardware_fault);		// clear the fault
 		}
 	}
 

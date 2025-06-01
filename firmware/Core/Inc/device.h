@@ -33,6 +33,7 @@ class device {
         logging logs; // error/warning handling
 
         const uint64_t* micros = nullptr; // pointer to the microseconds variable
+        const uint64_t* last_comm_time = nullptr; // pointer to the last communication time variable
         void delay_us(uint32_t time_us); // blocking delay for a specified time in microseconds
         void delay_ms(uint32_t time_ms); // blocking delay for a specified time in milliseconds
 

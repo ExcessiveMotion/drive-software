@@ -1,5 +1,5 @@
 {
-    "generated_date": "2025-05-23 21:45:33.384815",
+    "generated_date": "2025-05-23 21:52:44.794450",
     "hw_info": {
         "type": 0,
         "version": 0,
@@ -7,7 +7,7 @@
         "description": "Servo drive designed for industrial high voltage motors"
     },
     "fw_info": {
-        "version": 0,
+        "version": 1,
         "release_date": "7/18/2024",
         "description": "Firmware for (model number goes here) rev (hardware rev number goes here) servo drive"
     },
@@ -38,7 +38,7 @@
         "firmware_version": {
             "type": "uint32_t",
             "unit": "",
-            "value": 0,
+            "value": 1,
             "description": "firmware version",
             "permissions": "read",
             "index": 2

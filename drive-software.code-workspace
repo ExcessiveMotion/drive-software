@@ -163,7 +163,8 @@
 	"settings": {
 		"cortex-debug.variableUseNaturalFormat": true,
 		"files.associations": {
-			"cmath": "cpp"
+			"cmath": "cpp",
+			"random": "cpp"
 		}
 	}
 }

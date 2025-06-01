@@ -23,6 +23,7 @@ class user_io{
         uint8_t switch_state = 0;
         uint32_t led_state = 0;
         uint8_t led_modes[4] = {0, 0, 0, 0};
+        bool switches_valid = false;
 
         int32_t update_step = no_init;
 
@@ -86,6 +87,7 @@ class user_io{
         void init(void);
         
         uint8_t get_switch_states(void);
+        bool valid_switch_states(void) { return switches_valid; } // check if the switch states are valid
 
         void set_led_state(uint32_t led_select_, uint32_t led_mode_);
 

@@ -12,7 +12,6 @@ void device::init(){
     CPU_init();
     sysTick_init();
 
-    PhasePWM.release_mode();    // bypass safeties... only do this if testing with a low voltage current limited supply
 
     logs.init();
     logs.comm_vars = comm_vars;
@@ -21,31 +20,33 @@ void device::init(){
     Fans.init();
     UserIO.init();
     CurrentSense.init();
-    PhasePWM.init();
     Adc.init();
     Sto.init();
 
-    // #ifdef RELEASE_MODE
-    //     //watchdog_init(); // TODO: FIX THIS!
-    //     PhasePWM.release_mode();
-    // #endif
 
+    #ifdef RELEASE_MODE
+        //watchdog_init();
+        PhasePWM.release_mode();
+    #endif
+
+    //PhasePWM.release_mode();    // bypass safeties... only do this if testing with a low voltage current limited supply
+
+    PhasePWM.init();
 
     micros = Comm.micros;
+    last_comm_time = Comm.last_comm_time;
     logs.microseconds = Comm.micros;
     Comm.comm_vars = comm_vars;
     Comm.comm_var_pointers = comm_var_pointers;
     UserIO.micros = Comm.micros;
 
+    Default_Mode.set_time_ptrs(micros, last_comm_time);
+    FOC_Current.set_time_ptrs(micros, last_comm_time);
+    PFC_Mode.set_time_ptrs(micros, last_comm_time);
 
-    delay_ms(500); // wait for userIO to update
-
-    // wait until we have a valid communication address before initializing communication
-    Comm.set_device_address(UserIO.get_switch_states());
+    delay_ms(500); // allow system to stabilize before starting
     
     Comm.enable_resync = true; // enable resync
-
-    Comm.enable(); // enable communication
 
     current_mode->request_state(Mode::States::IDLE);
 
@@ -54,7 +55,7 @@ void device::init(){
     // check for watchdog reset flag
     if(RCC->CSR & RCC_CSR_IWDGRSTF){ // watchdog reset flag is set
         RCC->CSR |= RCC_CSR_RMVF; // clear the reset flag
-        logs.add(system_messages::watchdog_timeout);
+        logs.add((uint32_t)system_messages::watchdog_timeout);
     }
 }
 
@@ -214,7 +215,7 @@ void device::run(){
             flagged_tim1_up_tim10();
         }
         if(tim1_update_missed){
-            logs.add(system_messages::control_deadline_missed);
+            logs.add((uint32_t)system_messages::control_deadline_missed);
         }
 
         // handle requested state changes from controller
@@ -252,18 +253,18 @@ void device::run(){
                             default:
                                 current_mode = &Default_Mode;
                                 vars.device_mode = 0;
-                                logs.add(system_messages::invalid_mode); // invalid mode requested
+                                logs.add((uint32_t)system_messages::invalid_mode); // invalid mode requested
                                 break;
                         }
 
                         if(current_mode->set_sub_mode(vars.device_mode_sub_config)){
-                            logs.add(system_messages::invalid_sub_mode); // invalid sub mode requested
+                            logs.add((uint32_t)system_messages::invalid_sub_mode); // invalid sub mode requested
                             vars.device_mode_sub_config = 0; // reset to default sub mode
                         }
                     }
                     break;
                 default:
-                    logs.add(system_messages::invalid_state); // invalid state requested
+                    logs.add((uint32_t)system_messages::invalid_state); // invalid state requested
                     break;
             }
             last_controller_requested_state = vars.requested_state;
@@ -287,6 +288,12 @@ void device::run(){
         current_mode->default_run();
         current_mode->run();
         UserIO.run();
+
+        // wait for switches to be read before setting the address and enabling communication
+        if(!Comm.is_enabled() && UserIO.valid_switch_states()){
+            Comm.set_device_address(UserIO.get_switch_states());
+            Comm.enable(); // enable communication
+        }
 
     }
 }
@@ -328,7 +335,7 @@ void device::update(){
     }
 
     if(current_mode->get_error_on_comm_timeout() && !Comm.is_ok()){
-        //logs.add(communication_messages::timeout_error); // communication timeout error
+        logs.add((uint32_t)communication_messages::timeout_error); // communication timeout error
     }
 
     uint32_t dc_mv;

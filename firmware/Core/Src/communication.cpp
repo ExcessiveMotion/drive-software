@@ -118,7 +118,7 @@ void communication::update_timeout(){
 	int64_t diff = get_microseconds() - last_valid_packet_time_us;
 	if(diff > timeout_limit_us){
 		if(!timed_out){
-			logs->add(communication_messages::timeout_warning);
+			logs->add((uint32_t)communication_messages::timeout_warning);
 			reset_communication();	// reset configs so the device is in a known state for reconnection
 		}
 		timed_out = true;
@@ -295,7 +295,7 @@ void communication::set_tx_packet_length(uint32_t length){
 	// 	while(DMA2_Stream6->CR & (DMA_SxCR_EN_Msk));    // Wait for stream to disable
 	// }
 
-	DMA2_Stream6->NDTR = length * 4;	// set number of 8 bit transfer cycles
+	DMA2_Stream6->NDTR = length << 2;	// set number of 8 bit transfer cycles
 }
 
 
@@ -332,6 +332,9 @@ void communication::set_device_address(uint8_t address){
     \brief Receive data packet
 */
 void communication::start_receive(){
+	restart_rx_sync_capture();
+	clear_rx_idle_flag();
+	restart_rx_dma();
 	receive_complete = false;
 	receive_started = true;
 	USART6->CR3 |= USART_CR3_DMAR;	// Enable DMA for rx
@@ -356,7 +359,6 @@ void communication::start_transmit(){
 	//USART6->DR = 0b10101010;	// send dummy byte
 	enable_tx();
 	USART6->CR1 |= USART_CR1_TE;	// Enable Transmitter
-	
 }
 
 
@@ -388,40 +390,55 @@ void communication::dma_stream1_interrupt_handler(){
 void communication::usart6_interrupt_handler(){
 
 	if(USART6->SR & USART_SR_IDLE_Msk){		// RX IDLE state detected (incomming transmission over)
+
+		bool receive_complete_ = receive_complete;
+		// immediately start receiving again
+		start_receive();
         
 		int8_t result = verify_rx_packet();
-		if(result == 0 && enabled){	// packet addressed to this device
+		if(!enabled || !receive_complete_){	// if not enabled or not a complete packet, ignore
+			// do nothing
+			//start_receive();
+		}
+		else if(result == 0){	// packet addressed to this device
 			// interpret sequential data
 			interpret_rx_sequential_data();
-			// cyclic data can be interpreted outside of the rx handler
 
 			// start TX transmission
-			generate_tx_cyclic_data();
 			generate_tx_sequential_data();
+			//start_transmit();	// start transmitting before cyclic data is fully generated to reduce latency
+			generate_tx_cyclic_data();
 			start_transmit();
+			//start_receive();
+
+			auto temp = get_microseconds();
+			//last_packet_time_us = get_microseconds();	// update the last packet time (TODO: make this hardware sync?)
+
+			debug[debug_index++] = temp - last_packet_time_us;
+			last_packet_time_us = temp;	// update the last packet time
+			if(debug_index >= 32) debug_index = 0;
+
 			reset_timeout();
 			interpret_rx_cyclic_data();
 			firmware_update_handler();
 
-			if(!comm_vars->enable_cyclic_data != cyclic_mode_enabled){
-				calculate_rx_expected_size();
-			}
+			// if(!comm_vars->enable_cyclic_data != cyclic_mode_enabled){
+			// 	calculate_rx_expected_size();
+			// }
 
 			logs->comm_update();
 			sync_communication_edge();	// adjust VCXO frequency to sync with the controller	(TODO: only do this if the packet is a broadcast packet)
 		}
 		else if(result == 1){	// broadcast packet
 			// sync_communication_edge();	// adjust VCXO frequency to sync with the controller
+			//start_receive();
 			reset_timeout();
 		}
-		else{	// invalid packet
+		else{	// invalid packet or address
 			// do nothing
+			//start_receive();
 		}
 
-		restart_rx_sync_capture();
-		clear_rx_idle_flag();
-		restart_rx_dma();	// TODO: only do this on invalid packet receive? (maybe)
-		start_receive();
     }
 
 	if(USART6->SR & USART_SR_TC){	// transmission complete
@@ -444,13 +461,17 @@ uint32_t communication::calculate_crc(uint32_t *data, uint8_t data_length){
 }
 
 int8_t communication::verify_rx_packet(){
-	if(calculate_crc(rx.data_words, expected_rx_length-1) == rx.data_words[expected_rx_length-1]){	// verify CRC is correct
-		
+
+	// pre-check address before CRC for performance (if the address is invalid, valid or invalid CRC makes no difference)
+	if((rx.data_bytes[0] != device_address && rx.data_bytes[0] != 0xFF)){	// verify device address matches
+		return -1;	// invalid packet
+	}
+
+	if(calculate_crc(rx.data_words, expected_rx_length-1) == rx.data_words[expected_rx_length-1]){	// verify CRC is correct		
 		if(rx.data_bytes[0] == 0xFF){	// broadcast address
 			return 1;	// broadcast mode
 		}
 		if(rx.data_bytes[0] == device_address){	// verify device address matches
-			//TODO: update registers
 			return 0;	// address match
 		}
 	}
@@ -458,13 +479,11 @@ int8_t communication::verify_rx_packet(){
 }
 
 void communication::generate_tx_cyclic_data(){
-	// this is meant to be called BEFORE generate_tx_sequential_data
-
-	tx.data_bytes[0] = device_address;	// set device address
+	// this is meant to be called AFTER generate_tx_sequential_data
 
 	uint16_t offset = 1 + 4 + 4;	// leave room for device address, sequential data control/address and response
 	
-	if(comm_vars->enable_cyclic_data){
+	if(cyclic_mode_enabled){
 		
 		for(uint16_t i = CYCLIC_READ_ADDRESS_POINTER_START; i<CYCLIC_ADDRESS_COUNT+CYCLIC_READ_ADDRESS_POINTER_START; i++){
 			uint16_t data_address = *reinterpret_cast<uint16_t*>(comm_var_pointers[i]);
@@ -477,15 +496,15 @@ void communication::generate_tx_cyclic_data(){
 			offset += data_size;
 		}
 
-		if(!cyclic_mode_enabled){
-			//calculate_rx_expected_size();
-			cyclic_mode_enabled = true;
+		if(!comm_vars->enable_cyclic_data){
+			calculate_rx_expected_size();
+			cyclic_mode_enabled = false;
 		}
 	}
 	else{
-		if(cyclic_mode_enabled){
-			//calculate_rx_expected_size();
-			cyclic_mode_enabled = false;
+		if(comm_vars->enable_cyclic_data){
+			calculate_rx_expected_size();
+			cyclic_mode_enabled = true;
 		}
 	}
 
@@ -494,17 +513,19 @@ void communication::generate_tx_cyclic_data(){
 		offset += 4 - (offset % 4);
 	}
 	
-	expected_tx_length = offset/4;	// set the number of 32 bit words to transfer
+	expected_tx_length = offset >> 2;	// set the number of 32 bit words to transfer
 	expected_tx_length++;	// add 1 for the CRC
+
+	tx.data_words[expected_tx_length-1] = calculate_crc(tx.data_words, expected_tx_length-1);	// calculate CRC
 }
 
 void communication::generate_tx_sequential_data(){
-	// this is meant to be called AFTER generate_tx_cyclic_data, and must be inside of the communication rx handler
+	// this is meant to be called BEFORE generate_tx_cyclic_data, and must be inside of the communication rx handler
+
+	tx.data_bytes[0] = device_address;	// set device address
 	
 	memcpy(&(tx.data_bytes[1]), &sequential_register_control, 4);	// set sequential data control/address
 	memcpy(&(tx.data_bytes[5]), &sequential_register_data_response, 4);	// set sequential data response
-
-	tx.data_words[expected_tx_length-1] = calculate_crc(tx.data_words, expected_tx_length-1);
 }
 
 void communication::interpret_rx_sequential_data(){
@@ -522,7 +543,7 @@ void communication::interpret_rx_sequential_data(){
 			//sequential_register_data_response = 0;
 			sequential_register_control = sequential_register_control & ~(0xFF << 24);	// clear bits 24-31 (device response)
 			sequential_register_control |= 1 << 25;	// set bit 25 to indicate failure
-			logs->add(communication_messages::invalid_address);
+			logs->add((uint32_t)communication_messages::invalid_address);
 		}
 	}
 	else{
@@ -535,7 +556,7 @@ void communication::interpret_rx_sequential_data(){
 			sequential_register_data_response = 0;
 			sequential_register_control = sequential_register_control & ~(0xFF << 24);	// clear bits 24-31 (device response)
 			sequential_register_control |= 1 << 25;	// set bit 25 to indicate failure
-			logs->add(communication_messages::invalid_address);
+			logs->add((uint32_t)communication_messages::invalid_address);
 		}
 	}
 }
@@ -566,7 +587,7 @@ void communication::interpret_rx_cyclic_data(){
 	}
 
 	if(error){
-		logs->add(communication_messages::invalid_cyclic_config);
+		logs->add((uint32_t)communication_messages::invalid_cyclic_config);
 	}
 }
 
@@ -590,10 +611,12 @@ void communication::calculate_rx_expected_size(){
 		offset += 4 - (offset % 4);
 	}
 	
-	offset /= 4;	// convert to the number of 32 bit words to transfer
+	offset = offset >> 2;	// convert to the number of 32 bit words to transfer (divide by 4)
 	offset++;	// add 1 for the CRC
 
-	set_rx_packet_length(offset);
+	expected_rx_length = offset;	// set the number of 32 bit words to transfer
+
+	//set_rx_packet_length(offset);
 
 }
 
@@ -606,6 +629,7 @@ void communication::restart_rx_dma(){
 	DMA2_Stream1->CR &= ~(DMA_SxCR_EN); // Disable DMA stream
 	while(DMA2_Stream1->CR & (DMA_SxCR_EN_Msk));    // Wait for stream to disable
 	DMA2->LIFCR |= DMA_LIFCR_CTCIF1 | DMA_LIFCR_CHTIF1 | DMA_LIFCR_CTEIF1 | DMA_LIFCR_CDMEIF1 | DMA_LIFCR_CFEIF1;	// clear any interrupt flags
+	DMA2_Stream1->NDTR = expected_rx_length << 2;	// set number of 8 bit transfer cycles
 	DMA2_Stream1->CR |= DMA_SxCR_EN; // Enable DMA stream
 }
 

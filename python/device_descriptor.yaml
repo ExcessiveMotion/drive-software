@@ -6,7 +6,7 @@ hardware:
   description: "Servo drive designed for industrial high voltage motors"
 
 firmware:
-  version: 0
+  version: 1
   release_date: "7/18/2024"
   description: "Firmware for (model number goes here) rev (hardware rev number goes here) servo drive"
 
@@ -126,6 +126,16 @@ messages:
       description: "Could not start the selected mode"
       severity: "error"
 
+    sto_enable_failed:
+      readable_name: "STO enable failed"
+      description: "STO inputs were not enabled correctly"
+      severity: "error"
+
+    current_sense_not_ready:
+      readable_name: "Current sense not ready"
+      description: "Current sense was not ready"
+      severity: "error"
+
     watchdog_timeout:
       readable_name: "Watchdog timeout"
       description: "Hardware watchdog triggered the device to reset, this usually indicates a firmware bug or hardware fault"
@@ -166,6 +176,57 @@ messages:
       readable_name: "Resistance calibration failed"
       description: "Resistance calibration failed, unable to reach calibration current"
       severity: "error"
+
+  foc_commutation_calib:
+    fail:
+      readable_name: "Commutation calibration failed"
+      description: "Commutation calibration failed"
+      severity: "warning"
+    success:
+      readable_name: "Commutation calibration success"
+      description: "Commutation calibration success"
+      severity: "info"
+    out_of_tolerance:
+      readable_name: "Commutation calibration out of tolerance"
+      description: "Commutation change did not match shaft angle change"
+      severity: "warning"
+    
+
+  foc_current_loop_calib:
+    fail:
+      readable_name: "Current loop calibration failed"
+      description: "Current loop calibration failed"
+      severity: "warning"
+    success:
+      readable_name: "Current loop calibration success"
+      description: "Current loop calibration success"
+      severity: "info"
+    
+
+  foc_resistance_calib:
+    fail:
+      readable_name: "Resistance calibration failed"
+      description: "Resistance calibration failed, unable to reach calibration current"
+      severity: "warning"
+    success:
+      readable_name: "Resistance calibration success"
+      description: "Resistance calibration success"
+      severity: "info"
+    could_not_reach_current:
+      readable_name: "Could not reach calibration current"
+      description: "Resistance calibration could not reach desired calibration current"
+      severity: "warning"
+
+  foc_bemf_calib:
+    fail:
+      readable_name: "BEMF calibration failed"
+      description: "BEMF calibration failed, unable to reach calibration current"
+      severity: "warning"
+    success:
+      readable_name: "BEMF calibration success"
+      description: "BEMF calibration success"
+      severity: "info"
+
 
 # pfc mode is designed to not disable unless absolutely necessary, since more power will be dissipated in the fets if they are not being actively controlled
   # pfc:
@@ -272,7 +333,7 @@ hard_parameters:
     description: "Undervoltage protection will trip if the bus drops below this value."
 
   max_dc_bus_voltage:
-    value: 400
+    value: 410
     var_type: "uint16_t"
     unit: "volts"
     readable_name: "Maximum DC bus voltage"
@@ -342,7 +403,7 @@ hard_parameters:
     description: "System tick frequency, do not set above 1khz"
 
   deadtime:
-    value: 80
+    value: 20
     var_type: "uint32_t"
     unit: "ns"
     readable_name: "Phase PWM deadtime"
@@ -513,7 +574,7 @@ registers:
     permissions: "read"
 
   current_limit_q:
-    value: 10000
+    value: 1000
     var_type: "uint16_t"
     unit: "milliamps"
     readable_name: "q axis current limit"
@@ -521,7 +582,7 @@ registers:
     permissions: "read/write"
 
   current_limit_d:
-    value: 1000
+    value: 100
     var_type: "uint16_t"
     unit: "milliamps"
     readable_name: "d axis current limit"
@@ -561,7 +622,7 @@ registers:
     permissions: "read"
 
   phase_resistance:
-    value: 1.3
+    value: 0.0
     var_type: "float"
     unit: "ohms"
     readable_name: "Phase resistance"
@@ -593,7 +654,7 @@ registers:
     permissions: "read/write"
 
   calibration_current:
-    value: 5000
+    value: 500
     var_type: "uint16_t"
     unit: "milliamps"
     readable_name: "calibration current for all calibrations"
@@ -609,7 +670,7 @@ registers:
     permissions: "read"
   
   current_loop_p_gain:
-    value: 50.0
+    value: 20.0
     var_type: "float"
     unit: ""
     readable_name: "Proportional gain for current loop"
@@ -617,7 +678,7 @@ registers:
     permissions: "read/write"
 
   current_loop_i_gain:
-    value: 1.0
+    value: .1
     var_type: "float"
     unit: ""
     readable_name: "Integral gain for current loop"
@@ -632,16 +693,24 @@ registers:
     description: "Integral limit for current loop"
     permissions: "read/write"
 
-  current_loop_voltage_change_limit:
-    value: 100e3
+  foc_commutation_filter_q:
+    value: 100.0
     var_type: "float"
-    unit: "V/s"
-    readable_name: "Voltage change limit for current loop"
-    description: "Voltage change limit for current loop"
+    unit: ""
+    readable_name: "Commutation filter q"
+    description: "Commutation kalman filter q"
     permissions: "read/write"
-  
+
+  foc_commutation_filter_r_res:
+    value: 1024
+    var_type: "uint16_t"
+    unit: ""
+    readable_name: "Commutation filter r angle cnts"
+    description: "Commutation kalman filter r noise angle from encoder counts"
+    permissions: "read/write"
+
   max_ouput_voltage:
-    value: 300
+    value: 24
     var_type: "uint16_t"
     unit: "volts"
     readable_name: "Maximum output voltage"
@@ -649,7 +718,7 @@ registers:
     permissions: "read/write"
 
   pfc_target_voltage:
-    value: 36000
+    value: 24000
     var_type: "uint16_t"
     unit: "millivolts"
     readable_name: "PFC target voltage"
@@ -787,6 +856,14 @@ registers:
     readable_name: "Dummy register"
     description: "Dummy register for pointing cyclic regs to when not in use"
     permissions: "read/write"
+
+  # status:
+  #   value: 0
+  #   var_type: "uint8_t"
+  #   unit: ""
+  #   readable_name: "Status"
+  #   description: "Status bits, 0: IDLE, 1: RUNNING, 2: FAULT, 3: WARNING"
+  #   permissions: "read"
 
   message_control:
     value: 0

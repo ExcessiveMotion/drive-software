@@ -59,7 +59,9 @@ void user_io::init(void){
     \return Binary representation of the switch states
 */
 uint8_t user_io::get_switch_states(void){
-    return switch_state;
+    uint8_t lower = switch_state & 0x0F;
+    uint8_t reversed = ((lower & 0x01) << 3) | ((lower & 0x02) << 1) | ((lower & 0x04) >> 1) | ((lower & 0x08) >> 3);
+    return reversed;
 }
 
 
@@ -272,7 +274,8 @@ void user_io::run(void){
         case i2c_states::read_receive_data_wait:
             if(I2C1->SR1 & I2C_SR1_RXNE){    // Receive buffer not empty
                 i2c_state = i2c_states::done;
-                switch_state = I2C1->DR >> 4;                
+                switch_state = I2C1->DR >> 4;
+                switches_valid = true;
             }
             break;
 

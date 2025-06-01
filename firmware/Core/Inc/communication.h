@@ -20,6 +20,9 @@
 class communication{
     private:
 
+        uint32_t debug[32]; // debug array for testing
+        uint8_t debug_index = 0; // index for debug array
+
         logging* logs;
 
         bool enabled = false;
@@ -44,6 +47,7 @@ class communication{
         
         bool us_overflow = false;
         uint64_t microseconds = 0;
+        uint64_t last_packet_time_us = 0; // time of the last device-specific packet received in microseconds
         bool timed_out = true;
         uint64_t last_valid_packet_time_us = 0;
         const uint32_t timeout_limit_us = 10 * 1e3; // time between valid packets before timeout
@@ -64,7 +68,7 @@ class communication{
         uint16_t cyclic_write_addresses[CYCLIC_ADDRESS_COUNT];
         uint16_t cyclic_write_sizes[CYCLIC_ADDRESS_COUNT];
 
-        void set_tx_packet_length(uint32_t length);
+        inline void set_tx_packet_length(uint32_t length);
         void set_rx_packet_length(uint32_t length);
 
         uint32_t calculate_crc(uint32_t *data, uint8_t data_length);
@@ -75,8 +79,14 @@ class communication{
         void generate_tx_cyclic_data(); // prepares tx packet with device address and cyclic data
         void generate_tx_sequential_data(); // finalizes tx packet with sequential data and crc
 
-        void enable_tx(void);
-        void disable_tx(void);
+        inline void start_receive(void);
+        bool rx_idle_detected(void);
+        inline void clear_rx_idle_flag(void);
+        inline void start_transmit(void);
+        inline void restart_rx_dma(void);
+
+        inline void enable_tx(void);
+        inline void disable_tx(void);
 
         enum controller_register_access_result: uint8_t{
           SUCCESS,
@@ -123,22 +133,17 @@ class communication{
 
         void set_device_address(uint8_t address);
         void enable(void);
+        bool is_enabled(void) { return enabled; } // check if communication is enabled
         bool enable_resync = false;  // resets all timers on the next broascast packet
         
 
         const uint64_t* micros = &microseconds;
+        const uint64_t* last_comm_time = &last_packet_time_us;
         uint64_t get_microseconds(void);
 
         void update_timeout(void);
 
         bool is_ok(void);  // check if communication is working correctly (no timeout)
-
-        void start_receive(void);
-        bool rx_idle_detected(void);
-        void clear_rx_idle_flag(void);
-        void start_transmit(void);
-
-        void restart_rx_dma(void);
 
         void dma_stream1_interrupt_handler(void);
         void usart6_interrupt_handler(void);

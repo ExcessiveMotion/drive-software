@@ -36,6 +36,145 @@ class current_pi_controller{
 
 
 /**
+ * Discrete Kalman filter for 2-state [angle; angular rate] estimation.
+ * - Prediction step runs every control-loop cycle (dt).
+ * - Measurement update is called when a new encoder angle arrives.
+ *
+ * Angles are represented in [0, 2π).  Differences are wrapped to [-π, π).
+ *
+ * Tuning guidance for quantized encoders:
+ * - For N counts per revolution, quantization step Δθ = 2π/N.
+ * - A uniform-distribution quantization noise has variance ≈ Δθ²/12.
+ *   Thus R_angle ≈ (2π/N)²/12.
+ * - Process noise Q_rate should reflect expected acceleration variability.
+ */
+class KalmanFilterFOC {
+    public:
+        /**
+         * @param dt         Control loop timestep (s), e.g., 1/50000
+         * @param q_rate     Process noise variance for rate state (rate random-walk)
+         * @param r_angle    Measurement noise variance for angle (encoder jitter)
+         */
+        KalmanFilterFOC(float dt, float q_rate, float r_angle)
+            : dt(dt), Q_rate(q_rate), R_angle(r_angle)
+        {
+            // Initialize state estimates
+            x_angle = 0.0f;  // [0, 2π)
+            x_rate  = 0.0f;
+            // Initialize covariance matrix P
+            P00 = 1.0f; P01 = 0.0f;
+            P10 = 0.0f; P11 = 1.0f;
+        }
+
+        /**
+         * @brief re initialize the filter with new parameters\
+         * @param dt         Control loop timestep (s), e.g., 1/50000
+         * @param q_rate     Process noise variance for rate state (rate random-walk)
+         * @param r_angle    Measurement noise variance for angle (encoder jitter)
+         */
+        void re_init(float dt, float q_rate, float r_angle){
+            this->dt = dt;
+            Q_rate = q_rate;
+            R_angle = r_angle;
+
+            // Initialize state estimates
+            x_angle = 0.0f;  // [0, 2π)
+            x_rate  = 0.0f;
+            // Initialize covariance matrix P
+            P00 = 1.0f; P01 = 0.0f;
+            P10 = 0.0f; P11 = 1.0f;
+        }
+    
+        /**
+         * Utility: estimate measurement noise variance from encoder resolution.
+         * @param counts    Number of discrete steps per full revolution.
+         * @return R_angle  ≈ (2π/counts)²/12
+         */
+        static float estimateRAngleFromResolution(int counts) {
+            float delta = 2.0f * M_PI / float(counts);
+            return delta * delta / 12.0f;
+        }
+    
+        /**
+         * Update tuning: process (Q) and measurement (R) noise covariances.
+         */
+        void setTuning(float q_rate, float r_angle) {
+            Q_rate  = q_rate;
+            R_angle = r_angle;
+        }
+    
+        /**
+         * Measurement update at encoder rate (e.g., 1 kHz).
+         * @param theta_meas  Measured angle in [0, 2π)
+         */
+        void encoderUpdate(float theta_meas) {
+            float y = wrapDiff(theta_meas - x_angle);  // Innovation
+            float S = P00 + R_angle;                   // Innovation covariance
+            float K0 = P00 / S;
+            float K1 = P10 / S;
+            // State correction
+            x_angle = wrap2pi(x_angle + K0 * y);
+            x_rate  += K1 * y;
+            // Covariance correction
+            float P00_old = P00, P01_old = P01;
+            P00 = (1.0f - K0) * P00_old;
+            P01 = (1.0f - K0) * P01_old;
+            P10 = P10 - K1 * P00_old;
+            P11 = P11 - K1 * P01_old;
+        }
+    
+        /**
+         * Time update each control-loop tick (e.g., 50 kHz).
+         * @return Estimated angle in [0, 2π)
+         */
+        float update() {
+            // State prediction
+            x_angle = wrap2pi(x_angle + x_rate * dt);
+            // Covariance prediction
+            float P00_old = P00, P01_old = P01;
+            float P10_old = P10, P11_old = P11;
+            P00 = P00_old + dt * (P10_old + P01_old) + P11_old * dt * dt;
+            P01 = P01_old + P11_old * dt;
+            P10 = P10_old + P11_old * dt;
+            P11 = P11_old + Q_rate * dt;
+            return x_angle;
+        }
+    
+        /**
+         * @return Current estimated angle in [0, 2π)
+         */
+        float getAngle() const { return x_angle; }
+    
+        /**
+         * @return Current estimated angular rate (rad/s)
+         */
+        float getRate() const { return x_rate; }
+    
+    private:
+        float dt;         // Control-loop timestep (s)
+        float Q_rate;     // Process noise variance for rate
+        float R_angle;    // Measurement noise variance for angle
+    
+        float x_angle;    // State: estimated angle [0,2π)
+        float x_rate;     // State: estimated angular rate
+    
+        float P00, P01;   // Covariance matrix entries
+        float P10, P11;
+    
+        /** Wrap angle into [0, 2π). */
+        static float wrap2pi(float a) {
+            float m = fmodf(a, 2.0f * M_PI);
+            return (m < 0) ? m + 2.0f * M_PI : m;
+        }
+        /** Wrap difference into [-π, π). */
+        static float wrapDiff(float d) {
+            if (d >  M_PI) d -= 2.0f * M_PI;
+            else if (d < -M_PI) d += 2.0f * M_PI;
+            return d;
+        }
+};
+
+/**
     @brief: This mode provides current control for 3 phase PMSM motors
 **/
 
@@ -77,6 +216,9 @@ class foc_current_mode : public Mode{
 
    private:
 
+        uint16_t debug[32];
+        uint8_t debug_index = 0;
+
         enum class calibration_modes{
             NONE,
             RESISTANCE,
@@ -85,9 +227,13 @@ class foc_current_mode : public Mode{
             CURRENT_LOOP
         } calibration_mode = calibration_modes::NONE;
 
+        uint64_t last_comm_update_time = 0; // last time the commutation was updated (internally)
+
         bool error_on_comm_timeout = true;
 
         float filtered_dc_bus_voltage = 0;
+
+        float prev_theta = 0.0;
 
         // commanded current
         float current_cmd_q = 0.0;
@@ -105,6 +251,8 @@ class foc_current_mode : public Mode{
 
         current_pi_controller current_controller_d = current_pi_controller();
         current_pi_controller current_controller_q = current_pi_controller();
+
+        KalmanFilterFOC kalman_filter = KalmanFilterFOC(1.0f/(PWMCLK*2000.0f), 100.0f, KalmanFilterFOC::estimateRAngleFromResolution(1024)); // dt = 50kHz, r_angle = according to encoder resolution
 
         void run_foc(float theta);
 
@@ -172,6 +320,7 @@ class foc_current_mode : public Mode{
                                     }
                                 }
                                 else{
+                                    parent->logs->add((uint32_t)foc_resistance_calib_messages::could_not_reach_current);
                                     state = states::FAIL;
                                     reset_current_controllers();
                                     break;
@@ -332,14 +481,19 @@ class foc_current_mode : public Mode{
 
                 void run(void){
 
-                    float fbk_theta;
+                    uint32_t t = (*(parent->comm_vars))->commutation_command * (*(parent->comm_vars))->commutation_scale;
+                    float fbk_theta = float(t) / (65535.0f / float(2.0 * M_PI));
 
                     int32_t comm_fbk = (*(parent->comm_vars))->commutation_command;
-                    comm_fbk *= (*(parent->comm_vars))->commutation_scale;  // number of electrical rotation per commutation cycle
+                    comm_fbk *= (*(parent->comm_vars))->commutation_scale;  // number of electrical rotations per commutation cycle
+                    comm_fbk %= 65536; // wrap to 0 -> 65535
                     {
                         static int32_t last_comm_fbk = 0;
 
                         fbk_theta = (float)comm_fbk / (65535.0 / (2.0 * M_PI)); // single turn angle
+
+                        // wrap to 0 -> 2*pi
+                        fbk_theta = fmod(fbk_theta, 2.0 * M_PI);
                         
                         if(comm_fbk < last_comm_fbk - 32768){
                             multiturn_fbk_theta += 2.0 * M_PI;
@@ -392,7 +546,7 @@ class foc_current_mode : public Mode{
                                 comm_cmd_points[1] = comm_fbk;
                                 state = states::RUN_REV;
                             }
-                            cmd_theta += 0.0005;  // slow rotation fwd
+                            cmd_theta += 0.0003;  // slow rotation fwd
                             break;
 
                         case states::RUN_REV:
@@ -416,8 +570,9 @@ class foc_current_mode : public Mode{
                                 comm_cmd_points[3] = comm_fbk;
 
                                 // calculate the commutation offset
-                                float offset_tolerance = 0.01 * (2.0 * M_PI); // difference in measured offset over 1 electrical rotation
+                                float offset_tolerance = 0.05 * (2.0 * M_PI); // difference in measured offset over 1 electrical rotation
                                 if(fabs(fwd_offset_starting - fwd_offset_ending) > offset_tolerance || fabs(rev_offset_starting - rev_offset_ending) > offset_tolerance){
+                                    parent->logs->add((uint32_t)foc_commutation_calib_messages::out_of_tolerance);
                                     state = states::FAIL;
                                     break;
                                 }
@@ -433,7 +588,7 @@ class foc_current_mode : public Mode{
 
                                 state = states::DONE;
                             }
-                            cmd_theta -= 0.0005;  // slow rotation rev
+                            cmd_theta -= 0.0003;  // slow rotation rev
                             break;
 
                         case states::DONE:

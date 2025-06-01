@@ -37,6 +37,11 @@ class Mode {
         void request_state(States state);
         States get_state(void) { return current_state; }
         bool get_error_on_comm_timeout(void) { return error_on_comm_timeout; }
+
+        void set_time_ptrs(const uint64_t* micros, const uint64_t* last_comm_time){
+            this->micros = micros;
+            this->last_comm_time = last_comm_time;
+        }
         
 
     private:
@@ -49,6 +54,7 @@ class Mode {
 
         void check_current_limits(void);
 
+
     protected:
 
         logging* logs;
@@ -59,6 +65,9 @@ class Mode {
         user_io* UserIO;
         adc_interface* Adc;
         device_struct** comm_vars;
+
+        const uint64_t* micros = nullptr; // pointer to the microseconds variable
+        const uint64_t* last_comm_time = nullptr; // pointer to the last communication time variable
 
         bool error_on_comm_timeout = true;
 

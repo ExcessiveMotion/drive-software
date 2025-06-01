@@ -201,16 +201,16 @@ void adc_interface::convert_data(){
     dc_bus_millivolts = (raw_adc_data.data_16[3] * ADC_HV_SENSE_DIVIDER * 3300) / 4095;
 
     if(dc_bus_millivolts > MAX_DC_BUS_VOLTAGE*1000){
-        logs->log_persistent_active(system_messages::overvoltage);
+        logs->log_persistent_active((uint32_t)system_messages::overvoltage);
     }
     else{
-        logs->log_persistent_inactive(system_messages::overvoltage);
+        logs->log_persistent_inactive((uint32_t)system_messages::overvoltage);
     }
     if(dc_bus_millivolts < MIN_DC_BUS_VOLTAGE*1000){
-        logs->log_persistent_active(system_messages::undervoltage);
+        logs->log_persistent_active((uint32_t)system_messages::undervoltage);
     }
     else{
-        logs->log_persistent_inactive(system_messages::undervoltage);
+        logs->log_persistent_inactive((uint32_t)system_messages::undervoltage);
     }
 
 
@@ -225,7 +225,7 @@ void adc_interface::convert_data(){
 
     if(v_board_temp < .01f){
         board_temp = 200.0f; // set to a high value to trigger a fault
-        logs->add(system_messages::temp_sensor_fail);
+        logs->add((uint32_t)system_messages::temp_sensor_fail);
     }
     else{
         float r_board_temp = 10000.0f *((3.3f / v_board_temp) - 1.0f);
@@ -234,7 +234,7 @@ void adc_interface::convert_data(){
 
     if(v_heatsink_temp < .01f){
         heatsink_temp = 200.0f; // set to a high value to trigger a fault
-        logs->add(system_messages::temp_sensor_fail);
+        logs->add((uint32_t)system_messages::temp_sensor_fail);
     }
     else{
         float r_heatsink_temp = 10000.0f *((3.3f / v_heatsink_temp) - 1.0f);
@@ -243,7 +243,7 @@ void adc_interface::convert_data(){
 
     if(v_air_in_temp < .01f){
         air_in_temp = 200.0f; // set to a high value to trigger a fault
-        logs->add(system_messages::temp_sensor_fail);
+        logs->add((uint32_t)system_messages::temp_sensor_fail);
     }
     else{
         float r_air_in_temp = 10000.0f *((3.3f / v_air_in_temp) - 1.0f);

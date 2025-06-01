@@ -141,7 +141,7 @@ void resistance_calib_mode::tim1_up_irq_handler(void){
 
         if(total_voltage > max_voltage){
             test_state = test_states::FAULT;    // could not reach the test current with max voltage
-            logs->add(RL_calib_mode_messages::resistance_calib_fail);
+            logs->add((uint32_t)RL_calib_mode_messages::resistance_calib_fail);
         }
 
         if(avg_current > test_current*1000.0){
@@ -167,7 +167,7 @@ void resistance_calib_mode::tim1_up_irq_handler(void){
 
         if(counter > low_current_tries){
             test_state = test_states::FAULT;    // could not reach the low current threshold in time
-            logs->add(RL_calib_mode_messages::inductance_calib_fail);
+            logs->add((uint32_t)RL_calib_mode_messages::inductance_calib_fail);
 
         }
 

@@ -156,7 +156,7 @@ void phase_pwm::set_voltage(float U, float V, float W, float dc_bus_voltage){
 	W_ticks = W_ticks < min_pwm_ticks ? min_pwm_ticks : W_ticks;
 
 	if(U_ticks == max_pwm_ticks || V_ticks == max_pwm_ticks || W_ticks == max_pwm_ticks || U_ticks == min_pwm_ticks || V_ticks == min_pwm_ticks || W_ticks == min_pwm_ticks){
-		logs->add(phase_pwm_messages::voltage_saturation);
+		logs->add((uint32_t)phase_pwm_messages::voltage_saturation);
 	}
 
 	set_raw(U_ticks, V_ticks, W_ticks);

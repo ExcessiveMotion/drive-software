@@ -165,7 +165,7 @@ deviceFileGen.file = f"""
 
 """
 
-controllerFileGen = jsonFileGenerator(currentDir + f"/../firmware/device_{deviceDescriptor['hardware']['type']}_{deviceDescriptor['hardware']['version']}.json")
+controllerFileGen = jsonFileGenerator(currentDir + f"/../firmware/device_H{deviceDescriptor['hardware']['type']}_{deviceDescriptor['hardware']['version']}_F{deviceDescriptor['firmware']['version']}.json")
 controllerFileGen.append("generated_date", str(datetime.datetime.now()))
 controllerFileGen.append("hw_info", {
     "type":deviceDescriptor["hardware"]["type"],
@@ -349,7 +349,7 @@ for object_name, object_messages in deviceDescriptor["messages"].items():
 
     total_messages += message_id
 
-    deviceFileGen.enum(f"{object_name}_messages", messages_enum, "uint32_t", f"{object_name} messages")
+    deviceFileGen.enum(f"class {object_name}_messages", messages_enum, "uint32_t", f"{object_name} messages")
 
     object_id += 1
 
