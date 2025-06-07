@@ -153,7 +153,7 @@
 			"cmath": "cpp",
 			"random": "cpp"
 		},
-		// "cortex-debug.gdbPath.linux": "gdb-multiarch",
+		// st linux install in home directory is the default, change if you have it somewhere else
 		"cortex-debug.armToolchainPath.linux": "${env:HOME}/st/stm32cubeclt_1.18.0/GNU-tools-for-STM32/bin",
 		"cortex-debug.objdumpPath.linux": "${env:HOME}/st/stm32cubeclt_1.18.0/GNU-tools-for-STM32/arm-none-eabi/bin/objdump",
 		"cortex-debug.stm32cubeprogrammer.linux": "${env:HOME}/st/stm32cubeclt_1.18.0/STM32CubeProgrammer/bin",
