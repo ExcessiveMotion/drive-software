@@ -424,20 +424,9 @@ void communication::usart6_interrupt_handler(){
 			tx_transmit();
 			start_transmit();
 
-			auto temp = get_microseconds();
-			//last_packet_time_us = get_microseconds();	// update the last packet time (TODO: make this hardware sync?)
-
-			debug[debug_index++] = temp - last_packet_time_us;
-			last_packet_time_us = temp;	// update the last packet time
-			if(debug_index >= 32) debug_index = 0;
-
 			reset_timeout();
 			interpret_rx_cyclic_data();
 			firmware_update_handler();
-
-			// if(!comm_vars->enable_cyclic_data != cyclic_mode_enabled){
-			// 	calculate_rx_expected_size();
-			// }
 
 			logs->comm_update();
 			sync_communication_edge();	// adjust VCXO frequency to sync with the controller	(TODO: only do this if the packet is a broadcast packet)
@@ -445,7 +434,6 @@ void communication::usart6_interrupt_handler(){
 		else if(result == 1){	// broadcast packet
 			// sync_communication_edge();	// adjust VCXO frequency to sync with the controller
 			disable_tx();
-			reset_timeout();
 		}
 		else{	// invalid packet or address
 			// do nothing

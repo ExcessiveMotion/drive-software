@@ -3,6 +3,4 @@ firmware/build
 python/.venv
 firmware/Core/Inc/device_descriptor.h
 /.vscode
-!/.vscode/c_cpp_properties.json
-
-python/device_0_descriptor.h
+python/*.h

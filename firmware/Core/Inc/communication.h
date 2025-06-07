@@ -19,15 +19,9 @@
 // Class for managing uart hardware
 class communication{
     private:
-
-        uint32_t debug[32]; // debug array for testing
-        uint8_t debug_index = 0; // index for debug array
-
         logging* logs;
 
         bool enabled = false;
-
-        //TODO: find out if the 32bit array is even needed by the DMA
         union rx_data{
           uint32_t data_words[MAX_PACKET_SIZE];   // rx bytes are packed into this array by the DMA
           uint8_t data_bytes[MAX_PACKET_SIZE*4];  // same data as rx_data, but as bytes
@@ -47,7 +41,6 @@ class communication{
         
         bool us_overflow = false;
         uint64_t microseconds = 0;
-        uint64_t last_packet_time_us = 0; // time of the last device-specific packet received in microseconds
         bool timed_out = true;
         uint64_t last_valid_packet_time_us = 0;
         const uint32_t timeout_limit_us = 10 * 1e3; // time between valid packets before timeout
@@ -141,7 +134,7 @@ class communication{
         
 
         const uint64_t* micros = &microseconds;
-        const uint64_t* last_comm_time = &last_packet_time_us;
+        const uint64_t* last_comm_time = &last_valid_packet_time_us;
         uint64_t get_microseconds(void);
 
         void update_timeout(void);
