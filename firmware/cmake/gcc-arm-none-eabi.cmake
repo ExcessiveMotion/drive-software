@@ -3,17 +3,36 @@ set(CMAKE_SYSTEM_PROCESSOR          arm)
 
 # Some default GCC settings
 # arm-none-eabi- must be part of path environment
-string(REPLACE "\\" "/" STM32CLT_PATH $ENV{STM32CLT_PATH})
+
+
+if(WIN32)
+    # On Windows, use STM32CLT_PATH from the environment
+    string(REPLACE "\\" "/" STM32CLT_PATH $ENV{STM32CLT_PATH})
+else()
+    # On Linux, allow manual override
+    if(NOT DEFINED STM32CLT_PATH)
+        set(STM32CLT_PATH "$ENV{HOME}/st/stm32cubeclt_1.18.0")   # Default path for STM32CLT
+    endif()
+endif()
+
 set(TOOLCHAIN_PREFIX                ${STM32CLT_PATH}/GNU-tools-for-STM32/bin/arm-none-eabi-)
 set(FLAGS                           "-fdata-sections -ffunction-sections --specs=nano.specs -Wl,--gc-sections")
 set(CPP_FLAGS                       "-fno-rtti -fno-exceptions -fno-threadsafe-statics")
 
 # Define compiler settings
-set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc.exe ${FLAGS})
-set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
-set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++.exe ${FLAGS} ${CPP_FLAGS})
-set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy.exe)
-set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size.exe)
+if(WIN32)
+    set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc.exe ${FLAGS})
+    set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
+    set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++.exe ${FLAGS} ${CPP_FLAGS})
+    set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy.exe)
+    set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size.exe)
+else()
+    set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc ${FLAGS})
+    set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
+    set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++ ${FLAGS} ${CPP_FLAGS})
+    set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy)
+    set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size)
+endif()
 
 set(CMAKE_EXECUTABLE_SUFFIX_ASM     ".elf")
 set(CMAKE_EXECUTABLE_SUFFIX_C       ".elf")

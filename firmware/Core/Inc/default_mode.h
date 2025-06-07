@@ -42,16 +42,18 @@ class Mode {
             this->micros = micros;
             this->last_comm_time = last_comm_time;
         }
-        
 
     private:
         void safe_start_pwm(void);  // attempt to start the PWM outputs
         void safe_stop_pwm(void);   // stop the PWM outputs
         uint32_t current_sense_tries = 0;
         uint32_t high_side_ready_count = 0;
-        const uint32_t max_current_sense_tries = 60;
-        const uint32_t high_side_ready_cycles = 3; // number of cycles to wait for high side gate supplies to charge up (high fets are held high for this period)
+        uint32_t current_sense_delay_cnt = 0;
 
+        const uint32_t max_current_sense_tries = 60;
+        const uint32_t high_side_ready_cycles = 2; // number of cycles to wait for high side gate supplies to charge up (high fets are held high for this period)
+        const uint32_t current_sense_delay = 0; // cycles to leave the low side on after ADC startup to fully charge the ADCs and gate drivers
+        
         void check_current_limits(void);
 
 
@@ -81,6 +83,7 @@ class Mode {
             CHECK_ADC_VOLTAGES, // ensure voltage on all phases and DC bus is within limits
             PULSE_PWM, // briefly enable PWM outputs to power up ADCs and gate drivers
             WAIT_ADC_VALID, // wait for ADCs to power up show valid data
+            WAIT_ADC_CHARGED, // wait for ADC supplies to charge up
             WAIT_HIGH_SIDE_READY, // wait for high side gate supplies to charge up
             DONE,
             FAULT,

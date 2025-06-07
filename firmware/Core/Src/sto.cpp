@@ -23,14 +23,14 @@ void sto::init(){
 /*!
     \brief Enable drive
 */
-message_severities sto::enable(){
+bool sto::enable(){
 	auto fault = check_fault();
-	if(fault != message_severities::none){
-		return log->get_active_severity();		// STO fault detected
+	if(fault){
+		return false;		// STO fault detected, do not enable
 	}
 
 	GPIOC->BSRR |= GPIO_BSRR_BS10;	// turn on STO_EN output (note this also needs both external STO channels to be on to allow the drive to output)
-	return message_severities::none;
+	return true;
 }
 
 
@@ -76,20 +76,17 @@ bool sto::check_fault(){
 /*!
     \brief Check if the drive is allowed to enable PWM output
 */
-message_severities sto::output_allowed(bool* result){
+bool sto::output_allowed(){
 
 	bool fault = check_fault();
 
 	if(fault){
-		*result = false;		// STO fault detected
-		return log->get_active_severity();	// TODO: change this to not return faults, the logging system should be used for that
+		return false;
 	}
 
 	if(GPIOC->IDR & GPIO_IDR_ID11 || GPIOC->IDR & GPIO_IDR_ID12){
-		*result = false;		// one or both feedback signals are not active (inverted)
-		return log->get_active_severity();
+		return false;	// one or both feedback signals are not active (inverted)
 	}
 
-	*result = true;
-	return log->get_active_severity();
+	return true;
 }

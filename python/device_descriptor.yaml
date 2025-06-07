@@ -52,6 +52,16 @@ messages:
       description: "Current measurement was not ready"
       severity: "critical"
 
+    short_circuit_detected:
+      readable_name: "Short circuit detected"
+      description: "Short circuit detected on one of the phases, this usually indicates a wiring or hardware fault"
+      severity: "critical"
+
+    unexpected_current:
+      readable_name: "Unexpected current"
+      description: "Unexpected current detected, this usually indicates a wiring or hardware fault"
+      severity: "critical"
+
   communication:
     timeout_warning:
       readable_name: "Timeout"
@@ -146,6 +156,11 @@ messages:
       readable_name: "Voltage saturation"
       description: "PWM output was saturated, unable to reach commanded voltage"
       severity: "warning"
+
+    unexpected_disable:
+      readable_name: "Unexpected disable"
+      description: "Phase PWM was unexpectedly disabled, this usually indicates a hardware fault"
+      severity: "critical"
 
 
   sto:
@@ -644,6 +659,22 @@ registers:
     readable_name: "Electrical commutation offset"
     description: "Offset to add to the commutation command, applied after the scale factor"
     permissions: "read/write"
+
+  forward_estimated_commutation_scale:
+    value: 0.0
+    var_type: "float"
+    unit: "u"
+    readable_name: "Forward electrical commutation scale"
+    description: "How many electrical cycles are in one forward commutation command cycle"
+    permissions: "read"
+
+  reverse_estimated_commutation_scale:
+    value: 0.0
+    var_type: "float"
+    unit: "u"
+    readable_name: "Reverse electrical commutation scale"
+    description: "How many electrical cycles are in one reverse commutation command cycle"
+    permissions: "read"
 
   commutation_scale:
     value: 1

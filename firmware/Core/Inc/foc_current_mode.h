@@ -481,29 +481,36 @@ class foc_current_mode : public Mode{
 
                 void run(void){
 
-                    uint32_t t = (*(parent->comm_vars))->commutation_command * (*(parent->comm_vars))->commutation_scale;
-                    float fbk_theta = float(t) / (65535.0f / float(2.0 * M_PI));
+                    uint32_t t = (*(parent->comm_vars))->commutation_command;
+                    // note no offset used during calibration
 
-                    int32_t comm_fbk = (*(parent->comm_vars))->commutation_command;
-                    comm_fbk *= (*(parent->comm_vars))->commutation_scale;  // number of electrical rotations per commutation cycle
-                    comm_fbk %= 65536; // wrap to 0 -> 65535
-                    {
-                        static int32_t last_comm_fbk = 0;
+                    float enc_theta_direct = float(t) / (65535.0f / float(2.0 * M_PI)); // used for estimating the commutation scale
 
-                        fbk_theta = (float)comm_fbk / (65535.0 / (2.0 * M_PI)); // single turn angle
+                    t *= (*(parent->comm_vars))->commutation_scale;
+                    float enc_theta_scaled = float(t) / (65535.0f / float(2.0 * M_PI));
+                    enc_theta_scaled = fmod(enc_theta_scaled, 2.0 * M_PI); // wrap to 0 -> 2*pi
 
-                        // wrap to 0 -> 2*pi
-                        fbk_theta = fmod(fbk_theta, 2.0 * M_PI);
-                        
-                        if(comm_fbk < last_comm_fbk - 32768){
-                            multiturn_fbk_theta += 2.0 * M_PI;
-                        }
-                        else if(comm_fbk > last_comm_fbk + 32768){
-                            multiturn_fbk_theta -= 2.0 * M_PI;
-                        }
-                        last_comm_fbk = comm_fbk;
+                    float delta = enc_theta_scaled - last_comm_fbk_scaled;
+                    if(delta > M_PI){
+                        multiturn_fbk_theta -= 2.0 * M_PI;
                     }
-                    fbk_theta += multiturn_fbk_theta; // add the multiturn angle
+                    else if(delta < -M_PI){
+                        multiturn_fbk_theta += 2.0 * M_PI;
+                    }
+                    
+                    delta = enc_theta_direct - last_comm_fbk_direct;
+                    if(delta > M_PI){
+                        multiturn_fbk_theta_direct -= 2.0 * M_PI;
+                    }
+                    else if(delta < -M_PI){
+                        multiturn_fbk_theta_direct += 2.0 * M_PI;
+                    }
+
+                    last_comm_fbk_scaled = enc_theta_scaled;
+                    last_comm_fbk_direct = enc_theta_direct;
+
+                    enc_theta_scaled += multiturn_fbk_theta;
+                    enc_theta_direct += multiturn_fbk_theta_direct;
 
 
                     switch(state){
@@ -511,6 +518,8 @@ class foc_current_mode : public Mode{
                             break;
 
                         case states::START:
+                            (*(parent->comm_vars))->forward_estimated_commutation_scale = 0.0f;
+                            (*(parent->comm_vars))->reverse_estimated_commutation_scale = 0.0f;
                             parent->current_cmd_q = calib_current;
                             parent->current_cmd_d = 0.0;
                             cmd_theta = 0.0;
@@ -523,55 +532,60 @@ class foc_current_mode : public Mode{
                             rev_offset_starting = 0.0;
                             rev_offset_ending = 0.0;
                             multiturn_fbk_theta = 0.0;
+                            multiturn_fbk_theta_direct = 0.0;
+                            last_comm_fbk_scaled = 0.0f;
+                            last_comm_fbk_direct = 0.0f;
                             state = states::RUN_FWD;
                             break;
 
                         case states::RUN_FWD:
 
                             if(!first_point_reached && cmd_theta > 1.0 * M_PI){
-                                fwd_offset = fbk_theta - cmd_theta;
+                                fwd_offset = enc_theta_scaled - cmd_theta;
                                 fwd_offset_starting = fwd_offset;
                                 first_point_reached = true;
-                                fbk_theta_points[0] = fbk_theta;
-                                comm_cmd_points[0] = comm_fbk;
+                                fbk_theta_points[0] = enc_theta_direct;
+                                cmd_theta_points[0] = cmd_theta;
                             }
 
                             if(first_point_reached){
-                                fwd_offset = fwd_offset * 0.99 + (fbk_theta - cmd_theta) * 0.01;  // filter the offset reading
+                                fwd_offset = fwd_offset * 0.99 + (enc_theta_scaled - cmd_theta) * 0.01;  // filter the offset reading
                             }
 
-                            if(cmd_theta > 5.0 * M_PI){
-                                fwd_offset_ending = fbk_theta - cmd_theta;
-                                fbk_theta_points[1] = fbk_theta;
-                                comm_cmd_points[1] = comm_fbk;
+                            if(cmd_theta > 1.0 * M_PI + cal_distance){
+                                fwd_offset_ending = enc_theta_scaled - cmd_theta;
+                                fbk_theta_points[1] = enc_theta_direct;
+                                cmd_theta_points[1] = cmd_theta;
+                                (*(parent->comm_vars))->forward_estimated_commutation_scale = cal_distance/(fbk_theta_points[1]-fbk_theta_points[0]);
                                 state = states::RUN_REV;
                             }
-                            cmd_theta += 0.0003;  // slow rotation fwd
+                            cmd_theta += theta_step;  // slow rotation fwd
                             break;
 
                         case states::RUN_REV:
 
-                            if(!second_point_reached && cmd_theta < 4.0 * M_PI){
-                                rev_offset = fbk_theta - cmd_theta;
+                            if(!second_point_reached && cmd_theta < cal_distance){
+                                rev_offset = enc_theta_scaled - cmd_theta;
                                 rev_offset_starting = rev_offset;
                                 second_point_reached = true;
-                                fbk_theta_points[2] = fbk_theta;
-                                comm_cmd_points[2] = comm_fbk;
+                                fbk_theta_points[2] = enc_theta_direct;
+                                cmd_theta_points[2] = cmd_theta;
                             }
 
                             if(second_point_reached){
-                                rev_offset = rev_offset * 0.99 + (fbk_theta - cmd_theta) * 0.01;  // filter the offset reading
+                                rev_offset = rev_offset * 0.99 + (enc_theta_scaled - cmd_theta) * 0.01;  // filter the offset reading
                             }
 
                             if(cmd_theta < 0.0){
-                                rev_offset_ending = fbk_theta - cmd_theta;
+                                rev_offset_ending = enc_theta_scaled - cmd_theta;
                                 parent->current_cmd_q = 0.0;
-                                fbk_theta_points[3] = fbk_theta;
-                                comm_cmd_points[3] = comm_fbk;
+                                fbk_theta_points[3] = enc_theta_direct;
+                                cmd_theta_points[3] = cmd_theta;
+                                (*(parent->comm_vars))->reverse_estimated_commutation_scale = cal_distance/(fbk_theta_points[3]-fbk_theta_points[2]);
 
                                 // calculate the commutation offset
                                 float offset_tolerance = 0.05 * (2.0 * M_PI); // difference in measured offset over 1 electrical rotation
-                                if(fabs(fwd_offset_starting - fwd_offset_ending) > offset_tolerance || fabs(rev_offset_starting - rev_offset_ending) > offset_tolerance){
+                                if(fmod(fabs(fwd_offset_starting - fwd_offset_ending), (2.0f * M_PI)) > offset_tolerance || fmod(fabs(rev_offset_starting - rev_offset_ending), (2.0f * M_PI)) > offset_tolerance){
                                     parent->logs->add((uint32_t)foc_commutation_calib_messages::out_of_tolerance);
                                     state = states::FAIL;
                                     break;
@@ -588,7 +602,7 @@ class foc_current_mode : public Mode{
 
                                 state = states::DONE;
                             }
-                            cmd_theta -= 0.0003;  // slow rotation rev
+                            cmd_theta -= theta_step;  // slow rotation rev
                             break;
 
                         case states::DONE:
@@ -612,9 +626,16 @@ class foc_current_mode : public Mode{
                 float rev_offset_ending = 0.0;
 
                 float multiturn_fbk_theta = 0.0;
+                float multiturn_fbk_theta_direct = 0.0;
+
+                float last_comm_fbk_scaled = 0.0f;
+                float last_comm_fbk_direct = 0.0f;
+
+                const float theta_step = 0.001;
+                const float cal_distance = 2.0 * M_PI * 12.0; // electrical distance to rotate during calibration (rads)
 
                 float fbk_theta_points[4] = {0.0, 0.0, 0.0, 0.0};
-                uint16_t comm_cmd_points[4] = {0, 0, 0, 0};
+                float cmd_theta_points[4] = {0.0, 0.0, 0.0, 0.0};
 
         } commutation_cal = commutation_calibration(this);
 };

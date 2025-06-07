@@ -124,11 +124,6 @@ uint32_t current_sense_interface::get_currents(){
     incomplete_conversion_count = 0;
 
     // get conversion data from DFSDM
-    // TODO: verify conversion divisor
-    // TODO: consider shifting a more optimal number of bits to get higher resolution
-    // phase_U_milliamps = ((int32_t)(DFSDM2_Filter1->FLTRDATAR & 0xFFFFFF00)) / conversion_divisor_milliamps;
-    // phase_V_milliamps = ((int32_t)(DFSDM2_Filter2->FLTRDATAR & 0xFFFFFF00)) / conversion_divisor_milliamps;
-    // phase_W_milliamps = ((int32_t)(DFSDM2_Filter3->FLTRDATAR & 0xFFFFFF00)) / conversion_divisor_milliamps;
 
     phase_U_milliamps = ((int32_t)(DFSDM2_Filter1->FLTJDATAR & 0xFFFFFF00)) / conversion_divisor_milliamps;
     phase_V_milliamps = ((int32_t)(DFSDM2_Filter2->FLTJDATAR & 0xFFFFFF00)) / conversion_divisor_milliamps;
@@ -164,5 +159,5 @@ uint32_t current_sense_interface::short_circuit_detected(){
     \brief Clear short circuit detections
 */
 void current_sense_interface::clear_short_circuit_detected(){
-    DFSDM2_Filter0->FLTICR &= ~(DFSDM_FLTICR_CLRSCDF_Msk);
+    DFSDM2_Filter0->FLTICR |= DFSDM_FLTICR_CLRSCDF_Msk;
 }

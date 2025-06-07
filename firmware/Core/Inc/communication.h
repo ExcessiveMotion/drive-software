@@ -85,6 +85,9 @@ class communication{
         inline void start_transmit(void);
         inline void restart_rx_dma(void);
 
+        inline void tx_hold_low(void);
+        inline void tx_transmit(void);
+
         inline void enable_tx(void);
         inline void disable_tx(void);
 

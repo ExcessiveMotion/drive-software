@@ -50,6 +50,7 @@ void foc_current_mode::tim1_up_irq_handler(void){
             if(*last_comm_time != last_comm_update_time){
                 last_comm_update_time = *last_comm_time;
                 uint32_t t = (*comm_vars)->commutation_command * (*comm_vars)->commutation_scale;
+                t += (*comm_vars)->commutation_offset;
                 float enc_theta = float(t) / (65535.0f / float(2.0 * M_PI));
                 enc_theta = fmod(enc_theta, 2.0 * M_PI); // wrap to 0 -> 2*pi
                 kalman_filter.encoderUpdate(enc_theta);
@@ -65,6 +66,7 @@ void foc_current_mode::tim1_up_irq_handler(void){
 
         case calibration_modes::RESISTANCE:
             if(resistance_cal.state == resistance_calibration::states::IDLE){
+                (*comm_vars)->phase_resistance = 0.0; // reset resistance
                 resistance_cal.state = resistance_calibration::states::START;
             }
             resistance_cal.run();

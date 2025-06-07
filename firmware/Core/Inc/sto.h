@@ -22,9 +22,9 @@ class sto{
 
         void init(void);
 
-        message_severities output_allowed(bool* result);
+        bool output_allowed(void);
 
-        message_severities enable(void);
+        bool enable(void);
         void disable(void);
 
         bool check_fault(void);

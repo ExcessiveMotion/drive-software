@@ -361,9 +361,8 @@ void device::update_leds(){
         UserIO.set_led_state(0b0010, UserIO.off);
     }
 
-    bool sto_good;
-    Sto.output_allowed(&sto_good);
-    if(sto_good){
+
+    if(Sto.output_allowed()){
         UserIO.set_led_state(0b0100, UserIO.on);
     }
     else{

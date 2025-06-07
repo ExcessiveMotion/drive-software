@@ -25,6 +25,8 @@ void communication::init(){
 	GPIOA->AFR[1] |= 8 << GPIO_AFRH_AFSEL11_Pos;	// set PA11 alternate function to 8 (USART6)
 	GPIOA->AFR[1] |= 8 << GPIO_AFRH_AFSEL12_Pos;	// set PA12 alternate function to 8 (USART6)
 
+	GPIOA->BSRR |= GPIO_BSRR_BR11;	// set TX (PA11) low (when not in alternate function mode, this is the default state)
+
 	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;	// Enable GPIOC  Clock
 	GPIOC->MODER = (GPIOC->MODER & ~GPIO_MODER_MODER8) | GPIO_MODER_MODER8_0;		// set TX_EN (PC8) to output
 
@@ -107,6 +109,18 @@ void communication::init(){
 	timer_us_init();	// setup microsecond timer
 	timer_comm_sync_init();	// setup timer for communication sync
 	timer_vcxo_control_init();	// setup timer for VCXO control
+}
+
+void communication::tx_hold_low(){
+	// tx pin gpio is already set low, we just need to switch from AF mode
+	GPIOA->MODER &= ~GPIO_MODER_MODER11;	// clear PA11 mode
+	GPIOA->MODER |= GPIO_MODER_MODER11_0;	// set PA11 (TX) to GPIO output mode
+}
+
+void communication::tx_transmit(){
+	// set PA11 (TX) to alternate function mode
+	GPIOA->MODER &= ~GPIO_MODER_MODER11;	// clear PA11 mode
+	GPIOA->MODER |= GPIO_MODER_MODER11_1;	// set PA11 (TX) as alternate function
 }
 
 bool communication::is_ok(){
@@ -357,7 +371,6 @@ void communication::start_transmit(){
 	DMA2_Stream6->CR |= DMA_SxCR_EN; // Enable DMA TX stream
 
 	//USART6->DR = 0b10101010;	// send dummy byte
-	enable_tx();
 	USART6->CR1 |= USART_CR1_TE;	// Enable Transmitter
 }
 
@@ -394,11 +407,12 @@ void communication::usart6_interrupt_handler(){
 		bool receive_complete_ = receive_complete;
 		// immediately start receiving again
 		start_receive();
+		enable_tx();
         
 		int8_t result = verify_rx_packet();
 		if(!enabled || !receive_complete_){	// if not enabled or not a complete packet, ignore
 			// do nothing
-			//start_receive();
+			disable_tx();
 		}
 		else if(result == 0){	// packet addressed to this device
 			// interpret sequential data
@@ -406,10 +420,9 @@ void communication::usart6_interrupt_handler(){
 
 			// start TX transmission
 			generate_tx_sequential_data();
-			//start_transmit();	// start transmitting before cyclic data is fully generated to reduce latency
 			generate_tx_cyclic_data();
+			tx_transmit();
 			start_transmit();
-			//start_receive();
 
 			auto temp = get_microseconds();
 			//last_packet_time_us = get_microseconds();	// update the last packet time (TODO: make this hardware sync?)
@@ -431,18 +444,19 @@ void communication::usart6_interrupt_handler(){
 		}
 		else if(result == 1){	// broadcast packet
 			// sync_communication_edge();	// adjust VCXO frequency to sync with the controller
-			//start_receive();
+			disable_tx();
 			reset_timeout();
 		}
 		else{	// invalid packet or address
 			// do nothing
-			//start_receive();
+			disable_tx();
 		}
 
     }
 
 	if(USART6->SR & USART_SR_TC){	// transmission complete
 		disable_tx();
+		tx_hold_low();
 		USART6->SR &= ~USART_SR_TC_Msk;	// clear transmission complete flag
 	}
 	
