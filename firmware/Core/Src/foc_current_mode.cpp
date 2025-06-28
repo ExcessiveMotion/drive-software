@@ -143,8 +143,8 @@ void foc_current_mode::run_foc(float theta){
 
     clarke_and_park_transform(theta, U_current, V_current, W_current, &current_fbk_d, &current_fbk_q);
 
-    current_controller_q.I_term_limit = fmin((*comm_vars)->current_loop_i_limit, filtered_dc_bus_voltage*.9F); // limit to 90% of bus voltage
-    current_controller_d.I_term_limit = fmin((*comm_vars)->current_loop_i_limit, filtered_dc_bus_voltage*.9F); // limit to 90% of bus voltage
+    current_controller_q.I_term_limit = fmin((*comm_vars)->current_loop_i_limit, filtered_dc_bus_voltage*.8F); // limit to 80% of bus voltage
+    current_controller_d.I_term_limit = fmin((*comm_vars)->current_loop_i_limit, filtered_dc_bus_voltage*.8F); // limit to 80% of bus voltage
 
     // PI controllers
     applied_voltage_q = current_controller_q.update(q_cmd - current_fbk_q);
@@ -167,7 +167,6 @@ void foc_current_mode::run_foc(float theta){
 
     Inverse_Carke_and_Park_Transform(theta, applied_voltage_d, applied_voltage_q, &U_voltage, &V_voltage, &W_voltage);
 
-    // apply 3rd harmonic injection
     float V_max = fmaxf(U_voltage, fmaxf(V_voltage, W_voltage));
     float V_min = fminf(U_voltage, fminf(V_voltage, W_voltage));
     float offset = (V_max + V_min) / 2.0;
@@ -176,7 +175,6 @@ void foc_current_mode::run_foc(float theta){
     W_voltage -= offset;
 
     PhasePWM->set_voltage(U_voltage, V_voltage, W_voltage, filtered_dc_bus_voltage);
-    //PhasePWM->set_voltage(0, 0, 0, filtered_dc_bus_voltage);
 
     uint32_t bus_millivolts;
     Adc->get_dc_bus_millivolts(&bus_millivolts);

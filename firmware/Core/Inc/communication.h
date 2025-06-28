@@ -39,8 +39,9 @@ class communication{
         uint8_t expected_tx_length = 4;   // 4 x 32bit words is the smallest possible packet
         uint8_t device_address = 255;
         
-        bool us_overflow = false;
         uint64_t microseconds = 0;
+        uint32_t last_us_timer_cnt = 0;
+        uint64_t sync_microseconds = 0; // time of the last sync edge
         bool timed_out = true;
         uint64_t last_valid_packet_time_us = 0;
         const uint32_t timeout_limit_us = 10 * 1e3; // time between valid packets before timeout
@@ -130,10 +131,10 @@ class communication{
         void set_device_address(uint8_t address);
         void enable(void);
         bool is_enabled(void) { return enabled; } // check if communication is enabled
-        bool enable_resync = false;  // resets all timers on the next broascast packet
-        
+        bool enable_resync = false;  // resets all timers on the next broadcast packet
 
         const uint64_t* micros = &microseconds;
+        const uint64_t* sync_micros = &sync_microseconds;
         const uint64_t* last_comm_time = &last_valid_packet_time_us;
         uint64_t get_microseconds(void);
 

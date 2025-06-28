@@ -94,7 +94,6 @@ void pfc_mode::pfc_1_brake_run(){
     }
 
     constexpr float sqrt2_inv = 1.0f/1.41421356237f;
-    bool is_ac = false;
     // calculate the rms voltage from the peaks
     if((pfc_1_vars.pfc_sense_min_voltage < -1.0f && pfc_1_vars.pfc_sense_max_voltage > 1.0f)){
         // AC voltage is present, calculate the rms voltage

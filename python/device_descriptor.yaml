@@ -348,14 +348,14 @@ hard_parameters:
     description: "Undervoltage protection will trip if the bus drops below this value."
 
   max_dc_bus_voltage:
-    value: 410
+    value: 300
     var_type: "uint16_t"
     unit: "volts"
     readable_name: "Maximum DC bus voltage"
     description: "Overvoltage protection will trip if the bus rises above this value."
 
   max_phase_current:
-    value: 20000
+    value: 40000
     var_type: "uint16_t"
     unit: "milliamps"
     readable_name: "Max allowed phase current"

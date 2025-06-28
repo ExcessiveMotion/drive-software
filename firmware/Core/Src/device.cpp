@@ -25,7 +25,7 @@ void device::init(){
 
 
     #ifdef RELEASE_MODE
-        //watchdog_init();
+        watchdog_init();
         PhasePWM.release_mode();
     #endif
 
@@ -39,6 +39,7 @@ void device::init(){
     Comm.comm_vars = comm_vars;
     Comm.comm_var_pointers = comm_var_pointers;
     UserIO.micros = Comm.micros;
+    UserIO.sync_micros = Comm.sync_micros;
 
     Default_Mode.set_time_ptrs(micros, last_comm_time);
     FOC_Current.set_time_ptrs(micros, last_comm_time);
@@ -46,8 +47,6 @@ void device::init(){
 
     delay_ms(500); // allow system to stabilize before starting
     
-    Comm.enable_resync = true; // enable resync
-
     current_mode->request_state(Mode::States::IDLE);
 
     logs.clear_all(); // clear any faults from undefined startup
@@ -228,8 +227,10 @@ void device::run(){
                     break;
                 case 2:
                     if(logs.get_active_severity() >= message_severities::error || current_mode == &Default_Mode){
+                        // TODO: add an error for trying to start in default mode
                         break; // don't try to start if in error state or default mode
                     }
+                    Comm.enable_resync = false; // no resync allowed while running
                     current_mode->request_state(Mode::States::RUN);
                     break;
                 case 3:
@@ -262,6 +263,14 @@ void device::run(){
                             vars.device_mode_sub_config = 0; // reset to default sub mode
                         }
                     }
+                    break;
+                case 5: // system time synchronization
+                    if(current_mode->get_state() == Mode::States::IDLE){    // only allowed if in IDLE state
+                        if(comm_vars->enable_controller_syncronization && comm_vars->controller_syncronization_valid){
+                            Comm.enable_resync = true; // enable resync
+                        }
+                    }
+                    comm_vars->requested_state = 0; // reset requested state
                     break;
                 default:
                     logs.add((uint32_t)system_messages::invalid_state); // invalid state requested

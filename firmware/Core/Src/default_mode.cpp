@@ -104,10 +104,22 @@ void Mode::safe_start_pwm(void){
         case safe_start_steps::WAIT_HIGH_SIDE_READY:
             high_side_ready_count++;
             if(high_side_ready_count > high_side_ready_cycles){
-                safe_start_step = safe_start_steps::DONE;
-                PhasePWM->set_percentange(0.0, 0.0, 0.0);
+                safe_start_step = safe_start_steps::WAIT_FINAL_GATE_CHARGE;
+                gate_supply_final_cnt = 0;
+                PhasePWM->set_percentange(0.0, 0.0, 0.0);   // 50% duty cycle on all phases
             }
             break;
+
+        case safe_start_steps::WAIT_FINAL_GATE_CHARGE:
+            if(abs(CurrentSense->phase_U_milliamps) > 200 || abs(CurrentSense->phase_V_milliamps) > 200 || abs(CurrentSense->phase_W_milliamps) > 200){
+                logs->add((uint32_t)current_sense_messages::unexpected_current);
+            }
+            gate_supply_final_cnt++;
+            if(gate_supply_final_cnt > gate_supply_final_cycles){
+                safe_start_step = safe_start_steps::DONE;
+            }
+            break;
+        
     }
 
 }
@@ -196,7 +208,7 @@ void Mode::check_current_limits(void){
     }
 
     // fault if imbalance is too high
-    if(abs(U_ma + V_ma + W_ma) > MAX_IMBALANCE_CURRENT){
+    if(error_on_current_imbalance && abs(U_ma + V_ma + W_ma) > MAX_IMBALANCE_CURRENT){
         logs->add((uint32_t)current_sense_messages::imbalance);
     }
 }

@@ -83,6 +83,7 @@ class user_io{
         user_io(logging* logs);
 
         const uint64_t* micros = nullptr; // pointer to the global microseconds variable
+        const uint64_t* sync_micros = nullptr; // pointer to the sync microseconds variable
 
         void init(void);
         

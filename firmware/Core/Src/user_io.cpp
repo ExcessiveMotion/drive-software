@@ -98,9 +98,11 @@ void user_io::set_led_state(uint32_t led_select_, uint32_t led_mode_){
 */
 void user_io::SysTick_Handler(void){
 
-    bool slow_blink = (*micros & (0b1 << 20)) != 0;    // ~0.25Hz
-    bool medium_blink = (*micros & (0b1 << 19)) != 0;    // ~1Hz
-    bool fast_blink = (*micros & (0b1 << 17)) != 0;    // ~4Hz
+    uint64_t us = *micros - *sync_micros; // get the time since the last sync
+
+    bool slow_blink = (us & (0b1 << 20)) != 0;    // ~0.25Hz
+    bool medium_blink = (us & (0b1 << 19)) != 0;    // ~1Hz
+    bool fast_blink = (us & (0b1 << 17)) != 0;    // ~4Hz
 
     blink_state = (slow_blink << 1) | (medium_blink << 2) | (fast_blink << 3) | (1 << 4);
 

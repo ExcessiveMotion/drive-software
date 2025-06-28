@@ -149,8 +149,8 @@ void communication::timer_us_init(){
     TIM5->DIER |= TIM_DIER_UIE; // Enable update interrupt
 
 	TIM5->CR1 |= TIM_CR1_CEN; // Enable TIM5
-	NVIC_SetPriority(TIM5_IRQn, 14); // Set TIM2 interrupt priority to low
-    NVIC_EnableIRQ(TIM5_IRQn); // Enable TIM5 interrupt
+	//NVIC_SetPriority(TIM5_IRQn, 14); // Set TIM2 interrupt priority to low
+    //NVIC_EnableIRQ(TIM5_IRQn); // Enable TIM5 interrupt
     microseconds = 0; // Initialize the microseconds counter
 }
 
@@ -224,7 +224,7 @@ void communication::sync_communication_edge(){
 
 	int32_t sync_error = (int32_t)measured_rx_period - (int32_t)comm_vars->communication_update_interval;	// calculate the error in the period
 
-	if(abs(sync_error) > 1000){
+	if(abs(sync_error) > 100){
 		return; // ignore large errors
 	}
 
@@ -233,14 +233,21 @@ void communication::sync_communication_edge(){
 	if(integral_sync_error < -100) integral_sync_error = -100;	// limit the integral error to prevent overflow
 
 	constexpr int32_t timer_max = (SYSCLK*1e6) / (VCXO_PWM_CLK*1e3);
-	const int32_t integral_sync_deadband = 5;
+	const int32_t integral_sync_deadband = 1;
 
 	int32_t i_val = 0;
 	if(integral_sync_error > integral_sync_deadband) i_val = 1;
 	if(integral_sync_error < -integral_sync_deadband) i_val = -1;
 
+	if(abs(integral_sync_error) < 20){
+		comm_vars->controller_syncronization_valid = 1;	// if the error is small enough, we consider the synchronization valid
+	}
+	else{
+		comm_vars->controller_syncronization_valid = 0;	// if the error is too large, we consider the synchronization invalid
+	}
+
 	// adjust VCXO frequency to correct for the error
-	int16_t new_ccr = int16_t(TIM14->CCR1) - sync_error*10 - i_val;	// set the new duty cycle to correct for the error
+	int16_t new_ccr = int16_t(TIM14->CCR1) - sync_error*6 - i_val;	// set the new duty cycle to correct for the error
 	if(new_ccr < 0) new_ccr = 0;	// limit to minimum value
 	if(new_ccr > timer_max) new_ccr = timer_max;	// limit to maximum value
 	TIM14->CCR1 = new_ccr;	// set the new duty cycle
@@ -250,21 +257,26 @@ void communication::sync_communication_edge(){
 void communication::resync_system(){
 	if(!enable_resync) return;
 	enable_resync = false;
-	// SysTick->VAL = 0;	// reset the systick counter (note this is not a hardware sync so it is not perfect, but close enough since it is relatively slow)
+	
+	SysTick->VAL = 0;	// reset the systick counter (note this is not a hardware sync so it is not perfect, but close enough since it is relatively slow)
 
-	// // using the last time of an rx broadcast packet, we can calculate when we want to restart the PWM timer
-	// // this we do want to be exact, so we will use hardware sync
+	// using the last time of an rx broadcast packet, we can calculate when we want to restart the PWM timer
+	// this we do want to be exact, so we will use hardware sync
 
-	// TIM1->BDTR &= ~TIM_BDTR_MOE;	// disable PWM outputs
+	TIM1->BDTR &= ~TIM_BDTR_MOE;	// disable PWM outputs
 
-	// uint32_t reset_time = get_microseconds() + target_rx_period + pwm_timer_sync_offset_us;	// target time
+	uint64_t us = get_microseconds();	// get the current time in microseconds
 
-	// TIM2->CCER &= ~TIM_CCER_CC2E;	// disable output
-	// TIM2->CCMR1 |= 0b100 << TIM_CCMR1_OC2M_Pos;	// force output low
+	sync_microseconds = us;	// save the sync time
 
-	// TIM2->CCR2 = reset_time;	// set the reset time
-	// TIM2->CCMR1 |= 0b001 << TIM_CCMR1_OC2M_Pos;	// trigger output high on match
-	// TIM2->CCER |= TIM_CCER_CC2E;	// enable output
+	uint32_t reset_time = us + (comm_vars->communication_update_interval / 100) + comm_vars->pwm_timer_phase_offset;	// target time
+
+	TIM2->CCER &= ~TIM_CCER_CC2E;	// disable output
+	TIM2->CCMR1 |= 0b100 << TIM_CCMR1_OC2M_Pos;	// force output low
+
+	TIM2->CCR2 = reset_time;	// set the reset time
+	TIM2->CCMR1 |= 0b001 << TIM_CCMR1_OC2M_Pos;	// trigger output high on match
+	TIM2->CCER |= TIM_CCER_CC2E;	// enable output
 }
 
 void communication::TIM2_IRQHandler(){
@@ -272,15 +284,16 @@ void communication::TIM2_IRQHandler(){
 }
 
 void communication::TIM5_IRQHandler(){
-	us_overflow = true;
+	// us_overflow = true;
 }
 
 uint64_t communication::get_microseconds(){
-	volatile uint64_t us_temp = microseconds & 0xFFFFFFFF00000000; // Clear the lower 32 bits of the microseconds counter
-	us_temp = us_overflow ? us_temp + 0x100000000 : us_temp;	// Add 2^32 to the microseconds counter if there was an overflow
-	us_overflow = false; // Clear the overflow flag
-	us_temp += (TIM5->CNT & 0xFFFFFFFF); // Add the current timer value to the microseconds counter
-    microseconds = us_temp; // copy to global variable
+	__disable_irq();
+	uint32_t current_cnt = TIM5->CNT;
+	microseconds = current_cnt < last_us_timer_cnt ? microseconds + 0x100000000 : microseconds;
+	last_us_timer_cnt = current_cnt;	// save the current counter value
+	microseconds = (microseconds & 0xFFFFFFFF00000000) | (current_cnt & 0xFFFFFFFF);	// update the microseconds counter with the current timer value
+	__enable_irq();
     return microseconds;
 }
 
@@ -427,6 +440,8 @@ void communication::usart6_interrupt_handler(){
 			reset_timeout();
 			interpret_rx_cyclic_data();
 			firmware_update_handler();
+
+			resync_system();	// resync the system if needed
 
 			logs->comm_update();
 			sync_communication_edge();	// adjust VCXO frequency to sync with the controller	(TODO: only do this if the packet is a broadcast packet)
