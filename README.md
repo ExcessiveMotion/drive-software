@@ -28,6 +28,9 @@ Follow these steps to set up the development environment:
 1. Run the "Create Python venv and install dependencies" Task from "Terminal->Run Task..."<br>
 ![run task](.readme/run_task.png)
 
+## Fix missing libs for STM tools (linux)
+1. run "sudo apt install libncurses5"
+
 <br>
 
 # Building and Debugging

@@ -23,14 +23,14 @@ void sto::init(){
 /*!
     \brief Enable drive
 */
-message_severities sto::enable(){
+bool sto::enable(){
 	auto fault = check_fault();
-	if(fault != message_severities::none){
-		return fault;		// STO fault detected
+	if(fault){
+		return false;		// STO fault detected, do not enable
 	}
 
 	GPIOC->BSRR |= GPIO_BSRR_BS10;	// turn on STO_EN output (note this also needs both external STO channels to be on to allow the drive to output)
-	return message_severities::none;
+	return true;
 }
 
 
@@ -48,40 +48,45 @@ void sto::disable(){
 
 	\returns 0 when OK
 */
-message_severities sto::check_fault(){
-
+bool sto::check_fault(){
+	bool fault = false;
 	// check both feedback signals are the same
 	if((GPIOC->IDR & GPIO_IDR_ID11)>>GPIO_IDR_ID11_Pos != (GPIOC->IDR & GPIO_IDR_ID12)>>GPIO_IDR_ID12_Pos){
-		return log->add(sto_messages::sto_fault_matching_channels);		// return signifying a fault, feedback signals do not match
+		log->log_persistent_active((uint32_t)sto_messages::sto_fault_matching_channels);		// return signifying a fault, feedback signals do not match
+		fault = true;
+	}
+	else{
+		log->log_persistent_inactive((uint32_t)sto_messages::sto_fault_matching_channels);		// clear the fault
 	}
 
-	if(!GPIOC->ODR & GPIO_ODR_OD10){		// MCU STO output enable is off
+	if(!(GPIOC->ODR & GPIO_ODR_OD10)){		// MCU STO output enable is off
 		if(!(GPIOC->IDR & GPIO_IDR_ID11) || !(GPIOC->IDR & GPIO_IDR_ID12)){
-			return log->add(sto_messages::sto_hardware_fault);		// return signifying a fault, feedback is not allowed to be on(inverted) if the enable is off
+			log->log_persistent_active((uint32_t)sto_messages::sto_hardware_fault);		// return signifying a fault, feedback is not allowed to be on(inverted) if the enable is off
+			fault = true;
+		}
+		else{
+			log->log_persistent_inactive((uint32_t)sto_messages::sto_hardware_fault);		// clear the fault
 		}
 	}
 
-	return message_severities::none;
+	return fault;
 }
 
 
 /*!
     \brief Check if the drive is allowed to enable PWM output
 */
-message_severities sto::output_allowed(bool* result){
+bool sto::output_allowed(){
 
-	auto fault = check_fault();
+	bool fault = check_fault();
 
-	if(fault != message_severities::none){
-		*result = false;		// STO fault detected
-		return fault;
+	if(fault){
+		return false;
 	}
 
 	if(GPIOC->IDR & GPIO_IDR_ID11 || GPIOC->IDR & GPIO_IDR_ID12){
-		*result = false;		// one or both feedback signals are not active (inverted)
-		return fault;
+		return false;	// one or both feedback signals are not active (inverted)
 	}
 
-	*result = true;
-	return fault;
+	return true;
 }

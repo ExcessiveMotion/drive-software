@@ -1,19 +1,19 @@
-\
 #pragma once
 
 #include "stm32f413xx.h"
 
 #include "default_mode.h"
 // other modes should be included here
-#include "resistance_calib_mode.h"
-#include "dc_voltage_mode.h"
-#include "dc_current_mode.h"
+//#include "resistance_calib_mode.h"
+//#include "dc_voltage_mode.h"
+//#include "dc_current_mode.h"
 #include "foc_current_mode.h"
+#include "pfc_mode.h"
 
 #include "communication.h"
 #include "device_descriptor.h"
 
-//#define RELEASE_MODE    // enables watchdog and main phase PWM outputs
+#define RELEASE_MODE    // enables watchdog and main phase PWM outputs
 
 
 // main device class that contains all the other classes
@@ -33,6 +33,7 @@ class device {
         logging logs; // error/warning handling
 
         const uint64_t* micros = nullptr; // pointer to the microseconds variable
+        const uint64_t* last_comm_time = nullptr; // pointer to the last communication time variable
         void delay_us(uint32_t time_us); // blocking delay for a specified time in microseconds
         void delay_ms(uint32_t time_ms); // blocking delay for a specified time in milliseconds
 
@@ -44,23 +45,25 @@ class device {
         phase_pwm PhasePWM = phase_pwm(&logs); // PWM generation
         adc_interface Adc = adc_interface(&logs); // ADC sampling
         sto Sto = sto(&logs); // safe torque off
+
+        bool hse_vcxo_available = false;
         
         // create all modes
-        
 
-        //Mode Default_Mode = Mode(&logs, &Fans, &CurrentSense, &PhasePWM, &Sto, &UserIO, &Adc, comm_vars);
+        Mode Default_Mode = Mode(&logs, &Fans, &CurrentSense, &PhasePWM, &Sto, &UserIO, &Adc, &comm_vars);
         //resistance_calib_mode Resistance_Calib = resistance_calib_mode(&logs, &Fans, &CurrentSense, &PhasePWM, &Sto, &UserIO, &Adc, comm_vars);
         //dc_voltage_mode DC_Voltage = dc_voltage_mode(&logs, &Fans, &CurrentSense, &PhasePWM, &Sto, &UserIO, &Adc, comm_vars);
         //dc_current_mode DC_Current = dc_current_mode(&logs, &Fans, &CurrentSense, &PhasePWM, &Sto, &UserIO, &Adc, comm_vars);
         foc_current_mode FOC_Current = foc_current_mode(&logs, &Fans, &CurrentSense, &PhasePWM, &Sto, &UserIO, &Adc, &comm_vars);
-        
-        //Mode PMSM_torque_control; // torque control mode for PMSM motor (TODO: implement this mode class)
-        
-        //Mode* current_mode = &Default_Mode; // pointer to the current mode
+        pfc_mode PFC_Mode = pfc_mode(&logs, &Fans, &CurrentSense, &PhasePWM, &Sto, &UserIO, &Adc, &comm_vars);
+                
+        Mode* current_mode = &FOC_Current; // pointer to the current mode
         //Mode* current_mode = &Resistance_Calib; // pointer to the current mode
         //Mode* current_mode = &DC_Voltage; // pointer to the current mode
         //Mode* current_mode = &DC_Current; // pointer to the current mode
-        Mode* current_mode = &FOC_Current; // pointer to the current mode
+        //Mode* current_mode = &FOC_Current; // pointer to the current mode
+
+        uint8_t last_controller_requested_state = 0; // last requested state from the controller
 
         void update(); // low frequency update, called from SysTick_Handler
 
@@ -91,6 +94,9 @@ class device {
         bool tim2_flag = false; // flag set by the TIM2_IRQHandler
         void flagged_tim2(); // called when the tim2_flag is set
 
+        bool tim5_flag = false; // flag set by the TIM5_IRQHandler
+        void flagged_tim5(); // called when the tim5_flag is set
+
         bool i2c1_ev_flag = false; // flag set by the I2C1_EV_IRQHandler
         void flagged_i2c1_ev(); // called when the i2c1_ev_flag is set
 
@@ -105,6 +111,7 @@ class device {
 
         bool tim1_up_tim10_flag = false; // flag set by the TIM1_UP_TIM10_IRQHandler
         void flagged_tim1_up_tim10(); // called when the tim1_up_tim10_flag is set
+        bool tim1_update_missed = false; // flag set when the TIM1_UP_TIM10_IRQHandler is missed
         
 
     public: // interrupt handlers, every possible interrupt should be defined here

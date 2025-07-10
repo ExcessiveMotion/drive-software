@@ -46,7 +46,7 @@ void phase_pwm::init(){
 	
     TIM1->BDTR |= TIM_BDTR_BKP;
 	__NOP();__NOP();__NOP();		// Inserts a delay of 3 clock cycles	//TODO: investigate NOPs
-	TIM1->BDTR |= TIM_BDTR_BKE;		// Enable Brake (Safe Torque Off)
+	TIM1->BDTR |= TIM_BDTR_BKE;		// Enable Break (Safe Torque Off)
 	__NOP();__NOP();__NOP();		// Inserts a delay of 3 clock cycles
 
 	TIM1->CR1 |= TIM_CR1_CMS;     	// Set center-aligned mode
@@ -62,6 +62,12 @@ void phase_pwm::init(){
 		TIM1->CCER |= TIM_CCER_CC2E | TIM_CCER_CC2NE; // Enable CH1 and CH1N
 		TIM1->CCER |= TIM_CCER_CC3E | TIM_CCER_CC3NE; // Enable CH1 and CH1N
 	}
+
+	// ch4 is used to create an internal trigger for the ADC to sample PFC sense voltages
+	// trigger occurs once per up-count cycle
+	TIM1->CCMR2 |= (0b111 << TIM_CCMR2_OC4M_Pos); // PWM mode 2 on Channel 4 (inactive until compare value is reached in up-counting mode)
+	TIM1->CCER |= TIM_CCER_CC4E; // Enable CH4
+	TIM1->CCR4 = PWM_ticks - 1; // Trigger rising edge right before the update event (which is at the end of the up-counting cycle)
 
 	TIM1->CR2 |= 0b010 << TIM_CR2_MMS_Pos; 	// set TRGO output to update, this will trigger on every update event (used by DFSDM)
 
@@ -150,10 +156,18 @@ void phase_pwm::set_voltage(float U, float V, float W, float dc_bus_voltage){
 	W_ticks = W_ticks < min_pwm_ticks ? min_pwm_ticks : W_ticks;
 
 	if(U_ticks == max_pwm_ticks || V_ticks == max_pwm_ticks || W_ticks == max_pwm_ticks || U_ticks == min_pwm_ticks || V_ticks == min_pwm_ticks || W_ticks == min_pwm_ticks){
-		logs->add(phase_pwm_messages::voltage_saturation);
+		logs->add((uint32_t)phase_pwm_messages::voltage_saturation);
 	}
 
 	set_raw(U_ticks, V_ticks, W_ticks);
+}
+
+void phase_pwm::get_voltage(float* U, float* V, float* W, float dc_bus_voltage){
+	dc_bus_voltage /= 2;	// this is half since max voltage one ch can create is half the bus voltage (relative to the others set at 0v)
+	// get the actual voltage on the output pins
+	*U = float((int32_t)TIM1->CCR1 - (int32_t)PWM_ticks/2) / float(PWM_ticks/2) * dc_bus_voltage;
+	*V = float((int32_t)TIM1->CCR2 - (int32_t)PWM_ticks/2) / float(PWM_ticks/2) * dc_bus_voltage;
+	*W = float((int32_t)TIM1->CCR3 - (int32_t)PWM_ticks/2) / float(PWM_ticks/2) * dc_bus_voltage;
 }
 
 void phase_pwm::set_percentange(float U, float V, float W){

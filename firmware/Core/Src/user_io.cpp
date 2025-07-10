@@ -1,4 +1,4 @@
-#include "user_IO.h"
+#include "user_io.h"
 #include "device_descriptor.h"
 
 user_io::user_io(logging* logs){
@@ -59,7 +59,9 @@ void user_io::init(void){
     \return Binary representation of the switch states
 */
 uint8_t user_io::get_switch_states(void){
-    return switch_state;
+    uint8_t lower = switch_state & 0x0F;
+    uint8_t reversed = ((lower & 0x01) << 3) | ((lower & 0x02) << 1) | ((lower & 0x04) >> 1) | ((lower & 0x08) >> 3);
+    return reversed;
 }
 
 
@@ -96,9 +98,11 @@ void user_io::set_led_state(uint32_t led_select_, uint32_t led_mode_){
 */
 void user_io::SysTick_Handler(void){
 
-    bool slow_blink = (*micros & (0b1 << 20)) != 0;    // ~0.25Hz
-    bool medium_blink = (*micros & (0b1 << 19)) != 0;    // ~1Hz
-    bool fast_blink = (*micros & (0b1 << 17)) != 0;    // ~4Hz
+    uint64_t us = *micros - *sync_micros; // get the time since the last sync
+
+    bool slow_blink = (us & (0b1 << 20)) != 0;    // ~0.25Hz
+    bool medium_blink = (us & (0b1 << 19)) != 0;    // ~1Hz
+    bool fast_blink = (us & (0b1 << 17)) != 0;    // ~4Hz
 
     blink_state = (slow_blink << 1) | (medium_blink << 2) | (fast_blink << 3) | (1 << 4);
 
@@ -272,7 +276,8 @@ void user_io::run(void){
         case i2c_states::read_receive_data_wait:
             if(I2C1->SR1 & I2C_SR1_RXNE){    // Receive buffer not empty
                 i2c_state = i2c_states::done;
-                switch_state = I2C1->DR >> 4;                
+                switch_state = I2C1->DR >> 4;
+                switches_valid = true;
             }
             break;
 

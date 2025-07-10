@@ -3,7 +3,6 @@
 		"recommendations": [
 		  "ms-vscode.cpptools",
 		  "ms-vscode.cmake-tools",
-		  "twxs.cmake",
 		  "marus25.cortex-debug",
 		  "dan-c-underwood.arm",
 		  "zixuanwang.linkerscript",
@@ -100,15 +99,22 @@
 				"problemMatcher": []
 			},
 			{
-				"type": "shell",
 				"label": "Create Python venv and install dependencies",
-				"command": "cmd",
-				"args": [
-					"/c",
-					"if not exist ${workspaceFolder}\\python\\.venv ( python -m venv ${workspaceFolder}\\python\\.venv && ${workspaceFolder}\\python\\.venv\\Scripts\\activate && pip install -r requirements.txt ) else ( echo Virtual environment already exists )"
-				],
-				"options": {
-					"cwd": "${workspaceFolder}\\python"
+				"type": "shell",
+				"windows": {
+					"command": "cmd",
+					"args": [
+						"/c",
+						"if not exist ${workspaceFolder}\\python\\.venv ( python -m venv ${workspaceFolder}\\python\\.venv && ${workspaceFolder}\\python\\.venv\\Scripts\\activate && pip install -r requirements.txt ) else ( echo Virtual environment already exists )"
+					],
+					"options": {
+						"cwd": "${workspaceFolder}\\python"
+					}
+				},
+				"linux": {
+					"type": "shell",
+					"command": "./setup_venv.sh",
+					"options": { "cwd": "${workspaceFolder}/python" }
 				},
 				"problemMatcher": []
 			}
@@ -121,7 +127,14 @@
 				"name": "Debug",
 				"cwd": "${workspaceFolder}/firmware",        //Path from where commands are executed
 				"type": "cortex-debug",             //Debug 
-				"executable": "${command:cmake.launchTargetPath}", //or fixed file path: build/project-name.elf
+				"executable": "${workspaceFolder}/firmware/build/Debug/Bootloader/bootloader.elf",
+				"loadFiles": [
+					"${workspaceFolder}/firmware/build/Debug/combined.hex"
+				],
+				"symbolFiles": [
+					"${workspaceFolder}/firmware/build/Debug/Bootloader/bootloader.elf",
+					"${workspaceFolder}/firmware/build/Debug/Core/application.elf"
+				],
 				"request": "launch",                //Use "attach" to connect to target w/o elf download
 				"servertype": "stlink",             //Use stlink setup of cortex-M debug
 				"device": "STM32F413RG",            //MCU used
@@ -131,32 +144,18 @@
 				"svdFile": "firmware/stm32f413.svd",         //SVD file to see registers
 				"v1": false,
 				"showDevDebugOutput": "both",
-			},
-			// {
-			//     "name": "Run without Debug",
-			//     "cwd": "${workspaceFolder}/firmware",        //Path from where commands are executed
-			//     "type": "cortex-debug",             //Debug 
-			//     "executable": "${command:cmake.launchTargetPath}", //or fixed file path: build/project-name.elf
-			//     "request": "launch",                //Use "attach" to connect to target w/o elf download
-			//     "servertype": "stlink",             //Use stlink setup of cortex-M debug
-			//     "device": "STM32F413RG",            //MCU used
-			//     "interface": "swd",                 //Interface setup
-			//     "serialNumber": "",                 //Set ST-Link ID if you use multiple at the same time
-			//     "runToEntryPoint": "main",          //Run to main and stop there
-			//     "svdFile": "firmware/stm32f413.svd",         //SVD file to see registers
-			//     "v1": false,
-			//     "showDevDebugOutput": "both",
-			//     "postLaunchCommands": [
-			//             "monitor reset run",
-			//             "detach"
-			//         ]
-			// }
+			}
 		]
 	},
 	"settings": {
 		"cortex-debug.variableUseNaturalFormat": true,
 		"files.associations": {
-			"cmath": "cpp"
-		}
+			"cmath": "cpp",
+			"random": "cpp"
+		},
+		// st linux install in home directory is the default, change if you have it somewhere else
+		"cortex-debug.armToolchainPath.linux": "${env:HOME}/st/stm32cubeclt_1.18.0/GNU-tools-for-STM32/bin",
+		"cortex-debug.objdumpPath.linux": "${env:HOME}/st/stm32cubeclt_1.18.0/GNU-tools-for-STM32/arm-none-eabi/bin/objdump",
+		"cortex-debug.stm32cubeprogrammer.linux": "${env:HOME}/st/stm32cubeclt_1.18.0/STM32CubeProgrammer/bin",
 	}
 }

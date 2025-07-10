@@ -13,15 +13,15 @@
 #include <memory.h>
 #include "device_descriptor.h"
 #include "logging.h"
+#include "firmware_update.h"
 
 #define MAX_PACKET_SIZE 4+CYCLIC_ADDRESS_COUNT
 // Class for managing uart hardware
 class communication{
     private:
-
         logging* logs;
 
-        //TODO: find out if the 32bit array is even needed by the DMA
+        bool enabled = false;
         union rx_data{
           uint32_t data_words[MAX_PACKET_SIZE];   // rx bytes are packed into this array by the DMA
           uint8_t data_bytes[MAX_PACKET_SIZE*4];  // same data as rx_data, but as bytes
@@ -39,8 +39,9 @@ class communication{
         uint8_t expected_tx_length = 4;   // 4 x 32bit words is the smallest possible packet
         uint8_t device_address = 255;
         
-        bool us_overflow = false;
         uint64_t microseconds = 0;
+        uint32_t last_us_timer_cnt = 0;
+        uint64_t sync_microseconds = 0; // time of the last sync edge
         bool timed_out = true;
         uint64_t last_valid_packet_time_us = 0;
         const uint32_t timeout_limit_us = 10 * 1e3; // time between valid packets before timeout
@@ -61,7 +62,7 @@ class communication{
         uint16_t cyclic_write_addresses[CYCLIC_ADDRESS_COUNT];
         uint16_t cyclic_write_sizes[CYCLIC_ADDRESS_COUNT];
 
-        void set_tx_packet_length(uint32_t length);
+        inline void set_tx_packet_length(uint32_t length);
         void set_rx_packet_length(uint32_t length);
 
         uint32_t calculate_crc(uint32_t *data, uint8_t data_length);
@@ -72,8 +73,17 @@ class communication{
         void generate_tx_cyclic_data(); // prepares tx packet with device address and cyclic data
         void generate_tx_sequential_data(); // finalizes tx packet with sequential data and crc
 
-        void enable_tx(void);
-        void disable_tx(void);
+        inline void start_receive(void);
+        bool rx_idle_detected(void);
+        inline void clear_rx_idle_flag(void);
+        inline void start_transmit(void);
+        inline void restart_rx_dma(void);
+
+        inline void tx_hold_low(void);
+        inline void tx_transmit(void);
+
+        inline void enable_tx(void);
+        inline void disable_tx(void);
 
         enum controller_register_access_result: uint8_t{
           SUCCESS,
@@ -89,20 +99,21 @@ class communication{
 
 
         void timer_us_init(void);
-        void sync_timer_us(void);
+        void sync_communication_edge(void);
+        void timer_comm_sync_init(void);
+        void timer_vcxo_control_init(void);
         void restart_rx_sync_capture(void);
         //void save_rx_sync_time(void); // this should be called right after a packet is received
         void resync_system(void); // restarts all timers to sync with the controller
-        uint32_t rx_edge_time = 0;
-        uint32_t rx_period = 0;
-        uint32_t target_rx_period = 0;
-        uint32_t allowed_period_error = 0;  // maximum syncronization error that will allow clock adjustment
-        uint16_t pwm_timer_sync_offset_us = 0; // offset to sync pwm timer with controller
+        uint32_t last_rx_edge_cnt = 0;
+        int32_t integral_sync_error = 0;
 
         void reset_communication(void); // resets cylic configs and disables cyclic mode
+
+        firmware_update firm_update;
+        void firmware_update_handler(void); // handles firmware update requests from the controller
+
         
-
-
     public:
         // the DEVICE may read/write to ALL registers, regardless of their read/write setting in device_descriptor.h
         // the CONTROLLER however can only read/write to/from the register if the permission is set
@@ -118,28 +129,23 @@ class communication{
         void init(void);
 
         void set_device_address(uint8_t address);
-        void set_sync_frequency(uint16_t frequency_hz);
-        void set_pwm_timer_sync_offset_us(uint16_t offset_us);
-        bool enable_resync = false;  // resets all timers on the next broascast packet
-        
+        void enable(void);
+        bool is_enabled(void) { return enabled; } // check if communication is enabled
+        bool enable_resync = false;  // resets all timers on the next broadcast packet
 
         const uint64_t* micros = &microseconds;
+        const uint64_t* sync_micros = &sync_microseconds;
+        const uint64_t* last_comm_time = &last_valid_packet_time_us;
         uint64_t get_microseconds(void);
 
         void update_timeout(void);
 
         bool is_ok(void);  // check if communication is working correctly (no timeout)
 
-        void start_receive(void);
-        bool rx_idle_detected(void);
-        void clear_rx_idle_flag(void);
-        void start_transmit(void);
-
-        void restart_rx_dma(void);
-
         void dma_stream1_interrupt_handler(void);
         void usart6_interrupt_handler(void);
 
         void TIM2_IRQHandler(void);
+        void TIM5_IRQHandler(void);
 
 };
